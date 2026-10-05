@@ -5,6 +5,8 @@ members = [
     "components/xpath",
     "ffi/capi",
     "ports/servoshell",
+    "support/brow-bench",
+    "support/brow-net-core",
     "tests/capi",
     "tests/unit/*",
 ]
@@ -29,6 +31,7 @@ publish = true
 rust-version = "1.88.0"
 
 [workspace.dependencies]
+brow-net-core = { version = "0.1.0", path = "support/brow-net-core" }
 accesskit = { version = "0.24.0", features = ["serde"] }
 accesskit_consumer = "0.35.0"
 aes = { version = "0.9", features = ["zeroize"] }

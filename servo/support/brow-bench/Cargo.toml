@@ -1,0 +1,33 @@
+[package]
+name = "brow-bench"
+version = "0.1.0"
+edition = "2021"
+license = "MPL-2.0"
+description = "brow: network protocol benchmarks — TTFB and throughput across HTTP/1.1, HTTP/2 (plain + TLS) and HTTP/3"
+repository = "https://github.com/salim77007j/brow"
+
+[dependencies]
+brow-net-core = { path = "../brow-net-core" }
+bytes = "1"
+futures-util = "0.3"
+http = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["client", "server", "http1", "http2"] }
+hyper-rustls = { version = "0.27", default-features = false, features = ["ring", "native-tokio", "http1", "http2", "logging"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "tokio", "http1", "http2", "server"] }
+parking_lot = "0.12"
+rcgen = "0.14"
+quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls", "log"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
+rustls-pki-types = "1"
+tokio = { version = "1", features = ["net", "macros", "rt-multi-thread", "time", "sync"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
+h3 = "0.0.8"
+h3-quinn = "0.0.10"
+
+[dev-dependencies]
+rcgen = "0.14"
+
+[[bin]]
+name = "brow-bench"
+path = "main.rs"
