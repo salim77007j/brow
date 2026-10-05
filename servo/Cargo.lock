@@ -1232,20 +1232,22 @@ version = "0.1.0"
 dependencies = [
  "brow-cache",
  "brow-shell-core",
- "crossbeam-channel",
+ "env_logger",
  "euclid",
  "image",
  "keyboard-types 0.8.3",
  "log",
- "mimalloc",
  "raw-window-handle",
+ "rustls",
  "serde_json",
  "servo",
+ "servo-allocator",
  "slint",
  "slint-build",
  "softbuffer",
  "surfman",
  "url",
+ "webrender_api",
  "winit",
 ]
 
@@ -6088,15 +6090,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
 dependencies = [
  "autocfg",
-]
-
-[[package]]
-name = "mimalloc"
-version = "0.1.52"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d4139bb28d14ad1facf21d5eb8825051b326e172d216b39f6d31df53cc97862"
-dependencies = [
- "libmimalloc-sys",
 ]
 
 [[package]]

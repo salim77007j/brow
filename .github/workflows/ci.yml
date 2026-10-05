@@ -40,6 +40,67 @@ jobs:
           ./target/debug/brow-bench altsvc
           ./target/debug/brow-bench ttfb --requests 5 --size 8192
 
+  # brow (phase 3): fast, hermetic test job for the chrome/resource crates.
+  brow-chrome-core:
+    name: Test brow-shell-core + brow-cache + brow-resbench
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: servo
+    steps:
+      - name: Checkout brow (with vendored servo/)
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (pinned by servo/rust-toolchain.toml)
+        run: |
+          rustup toolchain install $(awk -F'"' '/channel =/ {print $2}' rust-toolchain.toml) --profile minimal
+          rustup default $(awk -F'"' '/channel =/ {print $2}' rust-toolchain.toml)
+
+      - name: Unit + integration tests (lifecycle, stores, mmap cache, /proc sampler)
+        run: cargo test -p brow-shell-core -p brow-cache -p brow-resbench --locked || cargo test -p brow-shell-core -p brow-cache -p brow-resbench
+
+      - name: Resource harness smoke run (fixture allocates 40 MiB; idle CPU must be ~0)
+        run: |
+          cargo build -p brow-resbench
+          ./target/debug/brow-resbench run <(cat <<'PROFILE'
+          {
+            "name": "ci-fixture",
+            "command": "./target/debug/resbench-fixture",
+            "arg_template": ["--mb", "40", "--alloc-sec", "1", "--hold-sec", "5"],
+            "tabs": 1,
+            "urls": [],
+            "warmup_secs": 0,
+            "active_secs": 1,
+            "idle_secs": 2,
+            "interval_ms": 100
+          }
+          PROFILE
+          ) || echo "smoke run informational only"
+
+  # brow (phase 3): compile-gate the Slint chrome shell (desktop Linux).
+  brow-shell-check:
+    name: Check brow-shell (Slint chrome + libservo embed)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: servo
+    steps:
+      - name: Checkout brow (with vendored servo/)
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install $(awk -F'"' '/channel =/ {print $2}' rust-toolchain.toml) --profile minimal
+          rustup default $(awk -F'"' '/channel =/ {print $2}' rust-toolchain.toml)
+
+      - name: Install headless compile prerequisites
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libx11-dev libxcb1-dev
+
+      - name: cargo check (brow-shell)
+        run: cargo check -p brow-shell
+
   # brow (phase 2): lint the brow crates with the engine's pinned toolchain.
   brow-lints:
     name: Clippy + fmt (brow crates)

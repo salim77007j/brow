@@ -340,6 +340,35 @@ impl TabManager {
         Ok(vec![TabEvent::UrlChanged(id, url)])
     }
 
+    /// Move back one entry in the tab's session history. Returns the URL to
+    /// load, or None when at the oldest entry.
+    pub fn go_back(&mut self, id: TabId) -> Result<Option<Url>, TabError> {
+        let tab = self.tab_mut(id)?;
+        if tab.history_index == 0 {
+            return Ok(None);
+        }
+        tab.history_index -= 1;
+        Ok(Some(tab.history[tab.history_index].clone()))
+    }
+
+    /// Move forward one entry in the tab's session history.
+    pub fn go_forward(&mut self, id: TabId) -> Result<Option<Url>, TabError> {
+        let tab = self.tab_mut(id)?;
+        if tab.history_index + 1 >= tab.history.len() {
+            return Ok(None);
+        }
+        tab.history_index += 1;
+        Ok(Some(tab.history[tab.history_index].clone()))
+    }
+
+    /// Jump to an absolute session-history index (clamped).
+    pub fn history_goto(&mut self, id: TabId, index: usize) -> Result<Option<Url>, TabError> {
+        let tab = self.tab_mut(id)?;
+        let index = index.min(tab.history.len() - 1);
+        tab.history_index = index;
+        Ok(Some(tab.history[index].clone()))
+    }
+
     pub fn set_title(&mut self, id: TabId, title: String) -> Result<Vec<TabEvent>, TabError> {
         let tab = self.tab_mut(id)?;
         tab.title = title.clone();

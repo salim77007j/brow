@@ -1,0 +1,53 @@
+[package]
+name = "brow-shell"
+version = "0.1.0"
+edition = "2021"
+license = "MPL-2.0"
+description = "brow: Slint-chrome frontend embedding the Servo engine — tabs, address bar, bookmarks, history, downloads, settings, RTL Arabic UI"
+repository = "https://github.com/salim77007j/brow"
+build = "build.rs"
+
+[package.metadata.notes]
+ui = "Slint 1.17 software renderer (headless-friendly, no GL required for chrome); 1.18+ blocked by mozjs icu_collections ~2.1 pin"
+
+[features]
+default = ["brow-allocator-mimalloc", "engine"]
+# Use mimalloc as the global allocator (Phase 3 resource strategy: tighter
+# size classes → lower RSS). jemalloc stays available in servoshell for
+# comparison builds.
+brow-allocator-mimalloc = ["servo-allocator/use-mimalloc"]
+# Embed the Servo engine (content windows, WebView delegates). Turning this
+# off compiles only the Slint chrome stack for headless UI verification —
+# the engine code paths remain the ones CI builds.
+engine = ["dep:servo", "dep:webrender_api", "dep:rustls"]
+
+[build-dependencies]
+slint-build = "1.17.1"
+
+[dependencies]
+servo-allocator = { workspace = true }
+brow-shell-core = { workspace = true }
+brow-cache = { workspace = true }
+slint = { version = "1.17.1", default-features = false, features = ["std", "renderer-software", "compat-1-2"] }
+log = { workspace = true }
+env_logger = { workspace = true }
+rustls = { workspace = true, features = ["aws-lc-rs"], optional = true }
+serde_json = { workspace = true }
+url = { workspace = true }
+euclid = { workspace = true }
+keyboard-types = { workspace = true }
+image = { workspace = true }
+
+[target.'cfg(not(any(target_os = "android", target_env = "ohos")))'.dependencies]
+winit = { workspace = true }
+surfman = { workspace = true, features = ["sm-x11"] }
+raw-window-handle = { workspace = true }
+softbuffer = "0.4.8"
+
+# Engine dependency: the same libservo servoshell embeds.
+servo = { workspace = true, default-features = false, features = ["background_hang_monitor"], optional = true }
+webrender_api = { workspace = true, optional = true }
+
+[package.metadata.deb]
+depends = "$auto"
+section = "web"

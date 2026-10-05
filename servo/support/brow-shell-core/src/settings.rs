@@ -94,7 +94,7 @@ impl Default for Settings {
             theme: Theme::System,
             locale: Lang::En,
             search_engine: SearchEngine::Google,
-            home_page: String::from("servo:browhome"),
+            home_page: String::from("https://duckduckgo.com/"),
             sleep_after_idle_secs: 10 * 60,
             hidden_webview_fps: 1,
             per_tab_memory_budget_mb: 100,

@@ -19,7 +19,7 @@ pub mod tabs;
 pub use bookmarks::BookmarkStore;
 pub use downloads::{Download, DownloadId, DownloadManager, DownloadState};
 pub use history::HistoryStore;
-pub use i18n::{Lang, L10n};
+pub use i18n::{Lang, L10n, Str};
 pub use lifecycle::{DiscardPolicy, MemoryPressure, SleepPolicy};
 pub use memwatch::{BudgetVerdict, MemoryBudgetTracker, MemorySample};
 pub use settings::{Settings, SettingsError};
