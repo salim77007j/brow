@@ -58,6 +58,16 @@ pub static enclosing_size: Option<EnclosingSizeFn> = Some(crate::enclosing_size_
 #[cfg(not(feature = "allocation-tracking"))]
 pub static enclosing_size: Option<EnclosingSizeFn> = None;
 
+#[cfg(all(
+    feature = "use-jemalloc",
+    feature = "use-mimalloc",
+    not(any(windows, target_env = "ohos"))
+))]
+compile_error!(
+    "features `use-jemalloc` and `use-mimalloc` are mutually exclusive: \
+     pick exactly one global allocator"
+);
+
 #[cfg(all(feature = "use-jemalloc", not(any(windows, target_env = "ohos"))))]
 mod platform {
     use std::ffi::CStr;
@@ -147,7 +157,91 @@ mod platform {
     }
 }
 
-#[cfg(all(not(windows), any(target_env = "ohos", not(feature = "use-jemalloc"))))]
+// brow: mimalloc platform module. mimalloc's tight size-class spacing and
+// eager page release give a lower resident footprint than jemalloc for the
+// many-small-object allocation profile of a browser with many live tabs
+// (Phase 3 resource strategy). See docs/BUILD_PGO.md and the Phase 3 report.
+#[cfg(all(
+    feature = "use-mimalloc",
+    not(feature = "use-jemalloc"),
+    not(any(windows, target_env = "ohos"))
+))]
+mod platform {
+    use std::os::raw::c_void;
+    use std::ptr;
+
+    /// mimalloc provides no `GlobalAlloc` implementation itself in
+    /// `libmimalloc-sys`, so we implement a minimal one over the C API.
+    pub struct MiMallocAllocator;
+
+    unsafe impl std::alloc::GlobalAlloc for MiMallocAllocator {
+        unsafe fn alloc(&self, layout: std::alloc::Layout) -> *mut u8 {
+            if layout.align() > MI_MAX_ALIGN {
+                return ptr::null_mut();
+            }
+            unsafe { libmimalloc_sys::mi_malloc(layout.size()) as *mut u8 }
+        }
+
+        unsafe fn dealloc(&self, ptr: *mut u8, _layout: std::alloc::Layout) {
+            unsafe { libmimalloc_sys::mi_free(ptr as *mut c_void) }
+        }
+
+        unsafe fn realloc(&self, ptr: *mut u8, layout: std::alloc::Layout, new_size: usize) -> *mut u8 {
+            if layout.align() > MI_MAX_ALIGN {
+                return ptr::null_mut();
+            }
+            unsafe { libmimalloc_sys::mi_realloc(ptr as *mut c_void, new_size) as *mut u8 }
+        }
+
+        unsafe fn alloc_zeroed(&self, layout: std::alloc::Layout) -> *mut u8 {
+            if layout.align() > MI_MAX_ALIGN {
+                return ptr::null_mut();
+            }
+            unsafe { libmimalloc_sys::mi_zalloc(layout.size()) as *mut u8 }
+        }
+    }
+
+    const MI_MAX_ALIGN: usize = 16;
+
+    // `libmimalloc-sys` does not bind `mi_usable_size`, but the symbol is
+    // exported by the mimalloc library it links, so declare it directly.
+    unsafe extern "C" {
+        fn mi_usable_size(p: *const c_void) -> usize;
+    }
+
+    pub use MiMallocAllocator as Allocator;
+
+    pub fn heap_reports() -> Vec<crate::HeapReport> {
+        // mimalloc exposes stats only via its verbose printer; programmatic
+        // per-counter extraction is not available through libmimalloc-sys.
+        Vec::new()
+    }
+
+    /// Get the size of a heap block.
+    ///
+    /// # Safety
+    ///
+    /// Passing a non-heap allocated pointer to this function results in undefined behavior.
+    pub unsafe extern "C" fn usable_size(ptr: *const c_void) -> usize {
+        let size = unsafe { mi_usable_size(ptr) };
+        #[cfg(feature = "allocation-tracking")]
+        crate::ALLOC.note_allocation(ptr, size);
+        size
+    }
+
+    /// Memory allocation APIs compatible with libc
+    pub mod libc_compat {
+        pub use libmimalloc_sys::{mi_free as free, mi_malloc as malloc, mi_realloc as realloc};
+    }
+}
+
+#[cfg(all(
+    not(windows),
+    any(
+        target_env = "ohos",
+        not(any(feature = "use-jemalloc", feature = "use-mimalloc"))
+    )
+))]
 mod platform {
     pub use std::alloc::System as Allocator;
     use std::os::raw::c_void;

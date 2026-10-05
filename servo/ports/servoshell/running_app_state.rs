@@ -138,9 +138,18 @@ impl WebViewCollection {
             if id_to_activate == webview_id {
                 webview.show();
                 webview.focus();
+                // brow (phase 3): the newly-active tab must run at full speed.
+                // Unthrottling is idempotent for freshly-created pipelines
+                // (the constellation also unthrottles on load).
+                webview.set_throttled(false);
             } else {
                 webview.hide();
                 webview.blur();
+                // brow (phase 3) resource strategy: background tabs are
+                // throttled — script timers clamp to
+                // `js_timers_minimum_duration` and compositor animation ticks
+                // stop — bringing idle CPU of background tabs near zero.
+                webview.set_throttled(true);
             }
         }
     }

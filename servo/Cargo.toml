@@ -263,6 +263,7 @@ tempfile = "3"
 tendril = { version = "0.5", features = ["encoding_rs"] }
 tikv-jemalloc-sys = "0.6.1"
 tikv-jemallocator = "0.6.1"
+libmimalloc-sys = "0.1.49"
 time = { package = "time", version = "0.3", features = ["large-dates", "local-offset", "serde"] }
 tokio = "1"
 tokio-rustls = { version = "0.26", default-features = false, features = ["logging"] }
@@ -303,7 +304,7 @@ xcomponent-sys = "0.4.0"
 xml = "1.1"
 xml5ever = "0.39"
 yuv = { version = "0.8.14", features = ["rayon"] }
-zeroize = "1.8"
+zeroize = { version = "1.8", features = ["derive"] }
 
 ############################################################################################
 ## Workspace-local dependencies

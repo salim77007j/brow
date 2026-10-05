@@ -7,11 +7,12 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossbeam_channel::{RecvTimeoutError, Sender};
 use embedder_traits::{EventLoopWaker, RefreshDriver};
 use log::warn;
+use servo_config::pref;
 use servo_constellation_traits::EmbedderToConstellationMessage;
 use timers::{BoxedTimerCallback, TimerEventRequest, TimerScheduler};
 
@@ -114,6 +115,14 @@ pub(crate) struct AnimationRefreshDriverObserver {
 
     /// Whether or not we are currently animating via a timer.
     pub(crate) animating: Cell<bool>,
+
+    /// brow (phase 3): last time hidden-but-animating WebViews received an
+    /// animation tick. Hidden WebViews are ticked at most
+    /// `hidden_webview_max_fps` times per second instead of the full frame
+    /// rate, which collapses their idle CPU cost while keeping slow-moving
+    /// state (progress bars, long animations) roughly correct when the user
+    /// returns to them.
+    last_hidden_tick: Cell<Option<Instant>>,
 }
 
 impl AnimationRefreshDriverObserver {
@@ -121,6 +130,7 @@ impl AnimationRefreshDriverObserver {
         Self {
             constellation_sender,
             animating: Default::default(),
+            last_hidden_tick: Cell::new(None),
         }
     }
 
@@ -164,20 +174,64 @@ impl RefreshDriverObserver for AnimationRefreshDriverObserver {
             return false;
         }
 
-        // Request new animation frames from all animating WebViews.
-        if let Err(error) =
-            self.constellation_sender
-                .send(EmbedderToConstellationMessage::TickAnimation(
-                    animating_webviews,
-                ))
-        {
-            warn!("Sending tick to constellation failed ({error:?}).");
-            return false;
+        // brow (phase 3): split the animating set by visibility. Visible
+        // WebViews tick at the full frame rate; hidden WebViews are capped to
+        // `hidden_webview_max_fps` (default 1 Hz, 0 = fully paused).
+        let mut visible_webviews = Vec::new();
+        let mut hidden_webviews = Vec::new();
+        for webview_id in animating_webviews {
+            if painter.is_webview_hidden(webview_id) {
+                hidden_webviews.push(webview_id);
+            } else {
+                visible_webviews.push(webview_id);
+            }
+        }
+
+        if !visible_webviews.is_empty() {
+            // Request new animation frames from all visible animating WebViews.
+            if let Err(error) =
+                self.constellation_sender
+                    .send(EmbedderToConstellationMessage::TickAnimation(
+                        visible_webviews,
+                    ))
+            {
+                warn!("Sending tick to constellation failed ({error:?}).");
+                self.animating.set(false);
+                return false;
+            }
+        }
+
+        if !hidden_webviews.is_empty() {
+            let max_fps = pref!(hidden_webview_max_fps).max(0);
+            let due = max_fps > 0 &&
+                match self.last_hidden_tick.get() {
+                    Some(last) => {
+                        now().duration_since(last) >= Duration::from_millis(1000 / max_fps as u64)
+                    },
+                    None => true,
+                };
+            if due {
+                self.last_hidden_tick.set(Some(now()));
+                if let Err(error) =
+                    self.constellation_sender
+                        .send(EmbedderToConstellationMessage::TickAnimation(
+                            hidden_webviews,
+                        ))
+                {
+                    warn!("Sending tick to constellation failed ({error:?}).");
+                    self.animating.set(false);
+                    return false;
+                }
+            }
         }
 
         self.animating.set(true);
         true
     }
+}
+
+fn now() -> Instant {
+    Instant::now()
 }
 
 enum TimerThreadMessage {

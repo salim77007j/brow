@@ -15,6 +15,9 @@ path = "lib.rs"
 [features]
 allocation-tracking = ["backtrace", "dep:rustc-hash", "log"]
 use-jemalloc = ["dep:tikv-jemalloc-sys", "dep:tikv-jemallocator"]
+# brow: mimalloc global allocator — smaller RSS for many-small-object browser
+# workloads. Mutually exclusive with use-jemalloc (compile_error if both).
+use-mimalloc = ["dep:libmimalloc-sys"]
 
 [dependencies]
 backtrace = { workspace = true, optional = true }
@@ -28,6 +31,7 @@ workspace = true
 libc = { workspace = true }
 tikv-jemalloc-sys = { workspace = true, optional = true, features = ["stats"] }
 tikv-jemallocator = { workspace = true, optional = true }
+libmimalloc-sys = { workspace = true, optional = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = ["Win32_System_Memory"] }

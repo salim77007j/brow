@@ -407,6 +407,13 @@ pub struct Preferences {
     pub session_history_max_length: i64,
     /// The background color of shell's viewport. This will be used by OpenGL's `glClearColor`.
     pub shell_background_color_rgba: [f64; 4],
+    /// brow (phase 3): maximum animation-frame rate for hidden (non-visible)
+    /// WebViews that are still animating. 1 = tick hidden tabs at most once
+    /// per second; 0 = fully pause animation ticking for hidden WebViews.
+    /// This is the engine-side complement of tab throttling: it bounds the
+    /// compositor wakeup rate for WebViews hidden by window occlusion or
+    /// multi-window tab switching, independent of `set_throttled`.
+    pub hidden_webview_max_fps: i64,
     pub webgl_testing_context_creation_error: bool,
     /// Maximum number of workers for the main thread pool
     pub thread_pool_workers_max: u64,
@@ -617,6 +624,7 @@ impl Preferences {
             perf_thread_boost_enabled: true,
             session_history_max_length: 20,
             shell_background_color_rgba: [1.0, 1.0, 1.0, 1.0],
+            hidden_webview_max_fps: 1,
             log_filter: String::new(),
             thread_pool_workers_max: 4,
             thread_pool_async_runtime_workers_max: 6,

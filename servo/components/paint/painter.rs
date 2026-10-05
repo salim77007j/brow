@@ -397,6 +397,15 @@ impl Painter {
             .collect()
     }
 
+    /// brow (phase 3): whether the given WebView is currently hidden, used by
+    /// the refresh driver to cap hidden-WebView animation ticking to
+    /// `hidden_webview_max_fps`. Unknown WebViews are treated as visible.
+    pub(crate) fn is_webview_hidden(&self, webview_id: WebViewId) -> bool {
+        self.webview_renderers
+            .get(&webview_id)
+            .is_some_and(|webview_renderer| webview_renderer.hidden())
+    }
+
     pub(crate) fn send_to_constellation(&self, message: EmbedderToConstellationMessage) {
         if let Err(error) = self.embedder_to_constellation_sender.send(message) {
             warn!("Could not send message to constellation ({error:?})");
