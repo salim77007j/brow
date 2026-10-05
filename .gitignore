@@ -1,0 +1,44 @@
+# ==== Rust / Cargo ====
+target/
+**/target/
+servo/target/
+**/*.rs.bk
+
+# Build logs and local artifacts
+*.log
+dist/
+out/
+
+# Packaging outputs (Phase 5)
+*.tar.gz
+*.zip
+*.AppImage
+*.deb
+*.rpm
+*.exe
+*.msi
+*.dmg
+
+# ==== Secrets / local env ====
+.env
+.env.*
+*.pem
+*.key
+ghp_*
+
+# ==== Editors / IDE ====
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ==== OS ====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==== Python (mach tooling) ====
+__pycache__/
+*.pyc
+.venv/
+venv/
