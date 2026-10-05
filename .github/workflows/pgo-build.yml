@@ -1,0 +1,79 @@
+name: brow PGO build
+
+# brow (phase 3): automated Profile-Guided Optimization pipeline.
+# Stage A builds an instrumented engine shell, trains it on deterministic
+# workloads, then stage B rebuilds with -Cprofile-use. See docs/BUILD_PGO.md.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1" # weekly, so the optimized binary stays fresh
+
+env:
+  CARGO_TERM_COLOR: always
+  PGO_DIR: /tmp/brow-pgo
+
+jobs:
+  pgo-build:
+    name: PGO-optimized build (linux x86_64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    defaults:
+      run:
+        working-directory: servo
+    steps:
+      - name: Checkout brow (with vendored servo/)
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (pinned by servo/rust-toolchain.toml)
+        run: |
+          rustup toolchain install $(awk -F'"' '/channel =/ {print $2}' rust-toolchain.toml) --profile minimal --component llvm-tools
+          rustup default $(awk -F'"' '/channel =/ {print $2}' rust-toolchain.toml)
+
+      - name: Install build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libx11-dev libxcb1-dev libegl1-mesa-dev
+
+      - name: Stage A — instrumented build
+        run: |
+          export RUSTFLAGS="-Cprofile-generate=$PGO_DIR"
+          cargo build --profile pgo-train -p servoshell
+
+      - name: Train (deterministic workloads)
+        run: |
+          export LLVM_PROFILE_FILE="$PGO_DIR/servo-%p-%m.profraw"
+          BIN=./target/pgo-train/servo
+          $BIN --headless tests/html/scrollbar.html || true
+          $BIN --headless --url data:text/html,<h1>brow-pgo-warmup</h1> || true
+          # Exercise layout + CSS + JS + image paths deterministically:
+          for doc in tests/html/*.html; do
+            timeout 20 $BIN --headless "$doc" || true
+          done
+
+      - name: Merge profiles
+        run: |
+          PROFDATA_BIN=$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-profdata
+          $PROFDATA_BIN merge -output=$PGO_DIR/merged.profdata $PGO_DIR
+
+      - name: Stage B — optimized build with profile use
+        run: |
+          export RUSTFLAGS="-Cprofile-use=$PGO_DIR/merged.profdata"
+          cargo build --profile pgo-release -p servoshell
+          cargo build --profile pgo-release -p brow-shell
+
+      - name: Verify + smoke the artifact
+        run: |
+          ls -la target/pgo-release/
+          file target/pgo-release/brow || true
+          target/pgo-release/brow --version || target/pgo-release/servo --version || true
+
+      - name: Upload PGO binary (7-day artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: brow-pgo-release-linux-x86_64
+          path: |
+            servo/target/pgo-release/brow
+            servo/target/pgo-release/servo
+          if-no-files-found: warn
+          retention-days: 7

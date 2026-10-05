@@ -108,7 +108,9 @@ fn cmd_run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn cmd_compare(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let files: Vec<&String> = args.iter().filter(|a| !a.starts_with("--")).collect();
+    // Positional inputs are everything before the first flag.
+    let inputs_end = args.iter().position(|a| a.starts_with("--")).unwrap_or(args.len());
+    let files: Vec<&String> = args[..inputs_end].iter().collect();
     if files.len() < 2 {
         return Err("compare needs >= 2 run JSON files".into());
     }
