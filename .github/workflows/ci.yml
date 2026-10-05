@@ -1,0 +1,73 @@
+name: Phase 1 CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build-servo-linux:
+    name: Build Servo from source (Linux x86_64, release)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    steps:
+      - name: Checkout brow (with vendored servo/)
+        uses: actions/checkout@v4
+
+      - name: Free disk space for the ~20 GB build tree
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL || true
+          sudo docker image prune --force || true
+          df -h /
+
+      - name: Install Servo build dependencies
+        run: |
+          sudo apt-get update
+          cd servo
+          ./mach bootstrap
+
+      - name: Show toolchain (pinned by servo/rust-toolchain.toml)
+        run: |
+          cd servo
+          cargo --version
+          rustc --version
+
+      - name: Build (release)
+        run: |
+          cd servo
+          ./mach build --release
+
+      - name: Smoke test — binary runs
+        run: |
+          cd servo
+          ./target/release/servo --version
+
+      - name: Smoke test — headless render of example.com
+        run: |
+          cd servo
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg"
+          mkdir -p "$XDG_RUNTIME_DIR"
+          if [ -f /usr/share/glvnd/egl_vendor.d/50_mesa.json ]; then
+            export __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json
+          fi
+          timeout 120 xvfb-run -a -s "-screen 0 1280x800x24" \
+            ./target/release/servo -z -o "$RUNNER_TEMP/shot.png" https://example.com || true
+          test -s "$RUNNER_TEMP/shot.png" && echo "headless render OK: $(stat -c%s "$RUNNER_TEMP/shot.png") bytes"
+
+      - name: Package artifact
+        run: |
+          cd servo/target/release
+          tar -czf "$RUNNER_TEMP/brow-servo-linux-x86_64.tar.gz" servo resources
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: brow-servo-linux-x86_64
+          path: ${{ runner.temp }}/brow-servo-linux-x86_64.tar.gz
+          retention-days: 14
