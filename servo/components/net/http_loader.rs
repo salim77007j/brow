@@ -118,6 +118,11 @@ pub struct HttpState {
     pub client: ServoClient,
     pub override_manager: CertificateErrorOverrideManager,
     pub embedder_proxy: GenericEmbedderProxy<NetToEmbedderMsg>,
+    /// brow (phase 2): advertised alternative services (RFC 7838), captured
+    /// from responses and consulted by the opportunistic HTTP/3 path.
+    pub alt_svc_cache: StdArc<Mutex<brow_net_core::altsvc::AltSvcCache>>,
+    /// brow (phase 2): the HTTP/3 (QUIC) client, bound lazily on first use.
+    pub h3_client: crate::h3_loader::H3ClientCell,
 }
 
 impl HttpState {
@@ -2215,31 +2220,51 @@ async fn http_network_fetch(
         // Let connection be the result of obtaining a connection, given networkPartitionKey,
         // request’s current URL, includeCredentials, and newConnection.
         _ => {
-            let response_future = obtain_response(
-                &context.state.client,
+            // brow (phase 2): opportunistic HTTP/3. If the origin advertised
+            // `Alt-Svc: h3` and the request is eligible, race the QUIC path
+            // first; any failure falls through to the classic h2 → h1.1 stack.
+            let h3_response = crate::h3_loader::fetch_via_h3(
+                &context.state,
+                context.ca_certificates.clone(),
+                context.ignore_certificate_errors,
                 &url,
                 &request.method,
-                &mut request.headers,
-                body,
-                request
-                    .body
-                    .as_ref()
-                    .is_some_and(|body| body.source_is_null()),
-                &request.pipeline_id,
-                Some(&request_id),
-                request.destination,
-                is_xhr,
-                context,
-                fetch_terminated_sender,
-                browsing_context_id,
-            );
+                &request.headers,
+                request.body.is_some(),
+            )
+            .await;
+            if let Ok(Some(response_stream)) = h3_response {
+                (response_stream, None)
+            } else {
+                if let Err(error) = h3_response {
+                    log::debug!("brow: h3 path failed for {url}, using classic stack: {error:?}");
+                }
+                let response_future = obtain_response(
+                    &context.state.client,
+                    &url,
+                    &request.method,
+                    &mut request.headers,
+                    body,
+                    request
+                        .body
+                        .as_ref()
+                        .is_some_and(|body| body.source_is_null()),
+                    &request.pipeline_id,
+                    Some(&request_id),
+                    request.destination,
+                    is_xhr,
+                    context,
+                    fetch_terminated_sender,
+                    browsing_context_id,
+                );
 
-            // This will only get the headers, the body is read later
-            let (response_stream, msg) = match response_future.await {
-                Ok(wrapped_response) => wrapped_response,
-                Err(error) => return Response::network_error(error),
-            };
-            (response_stream, msg)
+                // This will only get the headers, the body is read later
+                let (response_stream, msg) = match response_future.await {
+                    Ok(wrapped_response) => wrapped_response,
+                    Err(error) => return Response::network_error(error),
+                };
+                (response_stream, msg)
+            }
         },
     };
 
@@ -2247,6 +2272,42 @@ async fn http_network_fetch(
         debug!("{:?} response for {}", response_stream.version(), url);
         for header in response_stream.headers().iter() {
             debug!(" - {:?}", header);
+        }
+    }
+
+    // brow (phase 2): capture `Alt-Svc` advertisements (RFC 7838) so later
+    // requests to this origin can race the HTTP/3 transport. Only trustworthy
+    // origins may advertise (RFC 7838 §5.2/§9.1: alt-svc over http is ignored).
+    if url.scheme() == "https" {
+        if let Some(alt_svc) = response_stream
+            .headers()
+            .get(hyper::header::ALT_SVC)
+            .and_then(|value| value.to_str().ok())
+        {
+            let port = url.port_or_known_default().unwrap_or(443);
+            context.state.alt_svc_cache.lock().update_from_header(
+                url.scheme(),
+                url.host_str().unwrap_or_default(),
+                port,
+                alt_svc,
+            );
+        }
+    }
+
+    // brow (phase 2): surface cross-origin isolation headers (COOP/COEP/CORP)
+    // in the log/devtools-visible layer. The full document-level enforcement
+    // (browsing-context-group splitting) lands with the phase 3 shell; the
+    // decision engine itself is implemented and tested in brow-net-core.
+    if log_enabled!(log::Level::Debug) {
+        let headers = response_stream.headers();
+        for name in [
+            "cross-origin-opener-policy",
+            "cross-origin-embedder-policy",
+            "cross-origin-resource-policy",
+        ] {
+            if let Some(value) = headers.get(name).and_then(|v| v.to_str().ok()) {
+                debug!("brow: {} {name}: {value} for {url}", url.scheme());
+            }
         }
     }
 

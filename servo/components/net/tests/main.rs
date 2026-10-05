@@ -123,6 +123,10 @@ fn create_http_state(fc: Option<GenericEmbedderProxy<NetToEmbedderMsg>>) -> Http
         )),
         override_manager,
         embedder_proxy: fc.unwrap_or_else(|| create_generic_embedder_proxy()),
+        alt_svc_cache: std::sync::Arc::new(parking_lot::Mutex::new(
+            brow_net_core::altsvc::AltSvcCache::new(),
+        )),
+        h3_client: tokio::sync::OnceCell::new(),
     }
 }
 

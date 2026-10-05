@@ -26,6 +26,7 @@ async-compression = { workspace = true, features = ["brotli", "gzip", "tokio", "
 async-recursion = { workspace = true }
 async-tungstenite = { workspace = true }
 base64 = { workspace = true }
+brow-net-core = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 content-security-policy = { workspace = true }

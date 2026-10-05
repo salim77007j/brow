@@ -13,6 +13,7 @@ mod devtools;
 mod disk_cache;
 pub mod embedder;
 pub mod filemanager_thread;
+pub mod h3_loader;
 mod hosts;
 pub mod hsts;
 pub mod http_cache;

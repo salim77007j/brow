@@ -39,6 +39,40 @@ use crate::connector::BoxedBody;
 
 pub const DECODER_BUFFER_SIZE: usize = 8192;
 
+/// brow (phase 2): the body errors the decoder pipeline understands.
+///
+/// The classic hyper path produces [`DecoderBodyError::Hyper`]; the HTTP/3
+/// transport (see `crate::h3_loader`) produces [`DecoderBodyError::Brow`].
+/// Downstream consumers see identical error surfacing for both paths.
+#[derive(Debug)]
+pub enum DecoderBodyError {
+    /// An error from the classic hyper response body.
+    Hyper(hyper::Error),
+    /// An error from the brow HTTP/3 (QUIC) transport.
+    Brow(brow_net_core::BrowNetError),
+}
+
+impl fmt::Display for DecoderBodyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DecoderBodyError::Hyper(error) => error.fmt(f),
+            DecoderBodyError::Brow(error) => error.fmt(f),
+        }
+    }
+}
+
+impl Error for DecoderBodyError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            DecoderBodyError::Hyper(error) => error.source(),
+            DecoderBodyError::Brow(_) => None,
+        }
+    }
+}
+
+/// The boxed body type consumed by the decoder internals.
+pub type DecoderBoxedBody = http_body_util::combinators::BoxBody<Bytes, DecoderBodyError>;
+
 /// Marker wrapper for errors that originate from the network body stream
 #[derive(Debug)]
 pub struct BodyStreamError(pub Box<dyn Error + Send + Sync>);
@@ -124,7 +158,7 @@ impl Decoder {
     /// This decoder will emit the underlying bytes as-is.
     #[inline]
     fn plain_text(
-        body: BoxedBody,
+        body: DecoderBoxedBody,
         is_secure_scheme: bool,
         content_length: Option<ContentLength>,
     ) -> Decoder {
@@ -138,7 +172,7 @@ impl Decoder {
     /// This decoder will buffer and decompress bytes that are encoded in the expected format.
     #[inline]
     fn pending(
-        body: BoxedBody,
+        body: DecoderBoxedBody,
         type_: DecoderType,
         is_secure_scheme: bool,
         content_length: Option<ContentLength>,
@@ -158,6 +192,30 @@ impl Decoder {
     ///
     /// Uses the correct variant by inspecting the Content-Encoding header.
     pub fn detect(response: Response<BoxedBody>, is_secure_scheme: bool) -> Response<Decoder> {
+        Self::detect_impl(
+            response.map(|body| body.map_err(DecoderBodyError::Hyper).boxed()),
+            is_secure_scheme,
+        )
+    }
+
+    /// brow (phase 2): constructs a Decoder from an HTTP/3 response.
+    ///
+    /// The decompression logic is identical to [`Self::detect`]; only the body
+    /// error type differs (brow transport errors instead of hyper errors).
+    pub fn detect_h3(
+        response: Response<http_body_util::combinators::BoxBody<Bytes, brow_net_core::BrowNetError>>,
+        is_secure_scheme: bool,
+    ) -> Response<Decoder> {
+        Self::detect_impl(
+            response.map(|body| body.map_err(DecoderBodyError::Brow).boxed()),
+            is_secure_scheme,
+        )
+    }
+
+    fn detect_impl(
+        response: Response<DecoderBoxedBody>,
+        is_secure_scheme: bool,
+    ) -> Response<Decoder> {
         let values = response
             .headers()
             .get_all(CONTENT_ENCODING)
@@ -282,7 +340,7 @@ impl Future for Pending {
 }
 
 struct BodyStream {
-    body: BoxedBody,
+    body: DecoderBoxedBody,
     is_secure_scheme: bool,
     content_length: Option<ContentLength>,
     total_read: u64,
@@ -292,7 +350,7 @@ impl BodyStream {
     fn empty() -> Self {
         BodyStream {
             body: http_body_util::Empty::new()
-                .map_err(|_| unreachable!())
+                .map_err(|error| match error {})
                 .boxed(),
             is_secure_scheme: false,
             content_length: None,
@@ -300,7 +358,11 @@ impl BodyStream {
         }
     }
 
-    fn new(body: BoxedBody, is_secure_scheme: bool, content_length: Option<ContentLength>) -> Self {
+    fn new(
+        body: DecoderBoxedBody,
+        is_secure_scheme: bool,
+        content_length: Option<ContentLength>,
+    ) -> Self {
         BodyStream {
             body,
             is_secure_scheme,

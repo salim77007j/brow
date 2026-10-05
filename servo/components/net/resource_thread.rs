@@ -10,6 +10,7 @@ use std::fs::File;
 use std::io::{self, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
+use std::sync::Arc as StdArc;
 use std::thread;
 
 use cookie::Cookie;
@@ -48,12 +49,10 @@ use servo_base::generic_channel::{
 };
 use servo_base::id::CookieStoreId;
 use servo_url::{ImmutableOrigin, ServoUrl};
-use tokio::sync::Mutex as TokioMutex;
+use tokio::sync::{Mutex as TokioMutex, OnceCell};
 
 use crate::async_runtime::{init_async_runtime, spawn_task};
-use crate::connector::{
-    CACertificates, CertificateErrorOverrideManager, create_http_client, create_tls_config,
-};
+use crate::connector::{CACertificates, CertificateErrorOverrideManager, create_http_client, create_tls_config};
 use crate::cookie::ServoCookie;
 use crate::cookie_storage::CookieStorage;
 use crate::embedder::NetToEmbedderMsg;
@@ -215,6 +214,17 @@ fn create_http_states(
     }
 
     let override_manager = CertificateErrorOverrideManager::new();
+    let mut alt_svc_cache = brow_net_core::altsvc::AltSvcCache::new();
+    if let Some(config_dir) = config_dir {
+        servo_base::read_json_from_file(
+            &mut alt_svc_cache,
+            config_dir,
+            "alt_svc_cache.json",
+        );
+        // Advertisements from previous runs may have expired since.
+        alt_svc_cache.evict_expired();
+    }
+    let alt_svc_cache = StdArc::new(Mutex::new(alt_svc_cache));
     let http_state = HttpState {
         hsts_list: RwLock::new(hsts_list),
         cookie_jar: RwLock::new(cookie_jar),
@@ -226,8 +236,10 @@ fn create_http_states(
             ignore_certificate_errors,
             override_manager.clone(),
         )),
-        override_manager,
+        override_manager: override_manager.clone(),
         embedder_proxy: embedder_proxy.clone(),
+        alt_svc_cache: StdArc::clone(&alt_svc_cache),
+        h3_client: OnceCell::new(),
     };
 
     let override_manager = CertificateErrorOverrideManager::new();
@@ -244,6 +256,8 @@ fn create_http_states(
         )),
         override_manager,
         embedder_proxy,
+        alt_svc_cache: StdArc::new(Mutex::new(brow_net_core::altsvc::AltSvcCache::new())),
+        h3_client: OnceCell::new(),
     };
 
     (Arc::new(http_state), Arc::new(private_http_state))
@@ -670,6 +684,12 @@ impl ResourceChannelManager {
                     servo_base::write_json_to_file(&*jar, config_dir, "cookie_jar.json");
                     let hsts = http_state.hsts_list.read();
                     servo_base::write_json_to_file(&*hsts, config_dir, "hsts_list.json");
+                    let alt_svc = http_state.alt_svc_cache.lock();
+                    servo_base::write_json_to_file(
+                        &*alt_svc,
+                        config_dir,
+                        "alt_svc_cache.json",
+                    );
                 }
                 self.resource_manager.exit();
 

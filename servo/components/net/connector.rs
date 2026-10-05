@@ -40,14 +40,66 @@ pub const BUF_SIZE: usize = 32768;
 /// ALPN identifier for HTTP/2 (RFC 7540 §3.1).
 pub const ALPN_H2: &str = "h2";
 
+/// brow's built-in DoH defaults, used when the corresponding prefs are empty
+/// (the defaults struct is const-constructible, so non-empty strings live here).
+pub const DEFAULT_DOH_TEMPLATES: &str =
+    "https://mozilla.cloudflare-dns.com/dns-query https://dns.google/dns-query";
+pub const DEFAULT_DOH_BOOTSTRAP: &str = "1.1.1.1 8.8.8.8";
+
+/// Build the brow DNS resolver from preferences: DoH (RFC 8484) with system
+/// fallback when enabled, otherwise the OS resolver only.
+///
+/// Used both by the classic HTTP connector (via `HttpConnector::
+/// new_with_resolver`) and by the HTTP/3 transport, so that *every* name
+/// resolution the engine performs goes through encrypted DNS.
+pub fn create_dns_resolver() -> brow_net_core::dns::DohResolver {
+    let templates: Vec<String> = {
+        let configured = pref!(network_dns_over_https_templates);
+        let raw = if configured.is_empty() {
+            DEFAULT_DOH_TEMPLATES
+        } else {
+            &configured
+        };
+        raw.split_whitespace().map(str::to_string).collect()
+    };
+    let bootstrap: Vec<std::net::IpAddr> = {
+        let configured = pref!(network_dns_bootstrap_addresses);
+        let raw = if configured.is_empty() {
+            DEFAULT_DOH_BOOTSTRAP
+        } else {
+            &configured
+        };
+        raw.split_whitespace().filter_map(|s| s.parse().ok()).collect()
+    };
+
+    let mode = if pref!(network_dns_over_https_enabled) && !templates.is_empty() {
+        brow_net_core::dns::DnsMode::DohWithSystemFallback
+    } else {
+        brow_net_core::dns::DnsMode::SystemOnly
+    };
+
+    brow_net_core::dns::DohResolver::new(brow_net_core::dns::DohConfig {
+        mode,
+        templates,
+        bootstrap,
+        timeout: Duration::from_secs(3),
+        tls_config: None,
+    })
+}
+
+/// The engine's plain TCP connector. DNS resolution goes through the brow
+/// DoH resolver (`BrowDnsService`) instead of hyper's default getaddrinfo —
+/// this is what makes encrypted DNS apply to all HTTP(S) fetches.
 #[derive(Clone)]
 pub struct ServoHttpConnector {
-    inner: HyperHttpConnector,
+    inner: HyperHttpConnector<brow_net_core::dns::service::BrowDnsService>,
 }
 
 impl ServoHttpConnector {
     fn new() -> ServoHttpConnector {
-        let mut inner = HyperHttpConnector::new();
+        let mut inner = HyperHttpConnector::new_with_resolver(
+            brow_net_core::dns::service::BrowDnsService::new(create_dns_resolver()),
+        );
         inner.enforce_http(false);
         inner.set_happy_eyeballs_timeout(None);
         inner.set_connect_timeout(Some(Duration::from_secs(pref!(network_connection_timeout))));
@@ -374,6 +426,11 @@ pub enum CACertificates<'de> {
 /// Create a [TlsConfig] to use for managing a HTTP connection. This currently creates
 /// a rustls [ClientConfig].
 ///
+/// brow (phase 2): the negotiated protocol versions are bounded below by the
+/// `network.tls.min-version` pref (see [`brow_net_core::tls_policy`]); rustls
+/// already refuses TLS ≤ 1.1 and SSL. QUIC/HTTP-3 mandates TLS 1.3 regardless
+/// (RFC 9001 §4.1.1).
+///
 /// FIXME: The `ignore_certificate_errors` argument ignores all certificate errors. This
 /// is used when running the WPT tests, because rustls currently rejects the WPT certificiate.
 /// See <https://github.com/servo/servo/issues/30080>
@@ -388,9 +445,13 @@ pub fn create_tls_config(
         ignore_certificate_errors,
         override_manager,
     );
+    let min_version = brow_net_core::tls_policy::parse_min_version(
+        &pref!(network_tls_min_version),
+        brow_net_core::tls_policy::TlsMinVersion::Tls12,
+    );
     // TODO: After <https://github.com/rustls/rustls-platform-verifier/pull/204> is merged,
     // `dangerous` can be removed.
-    rustls::ClientConfig::builder()
+    rustls::ClientConfig::builder_with_protocol_versions(min_version.supported_versions())
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(verifier))
         .with_no_client_auth()

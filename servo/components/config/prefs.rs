@@ -352,6 +352,16 @@ pub struct Preferences {
     /// associated with multiple IP addresses, this timeout will be divided equally among
     /// each IP address.
     pub network_connection_timeout: u64,
+    /// brow (phase 2): use DNS-over-HTTPS (RFC 8484) for name resolution,
+    /// falling back to the system resolver when DoH fails.
+    pub network_dns_over_https_enabled: bool,
+    /// brow (phase 2): space-separated DoH template URLs (RFC 8484 §3), tried
+    /// round-robin. Empty means brow's built-in defaults (Cloudflare DNS,
+    /// Google Public DNS); the enabled pref still gates DoH entirely.
+    pub network_dns_over_https_templates: String,
+    /// brow (phase 2): space-separated bootstrap IPs used to reach the DoH
+    /// template hosts without leaking their resolution (loop avoidance).
+    pub network_dns_bootstrap_addresses: String,
     pub network_enforce_tls_enabled: bool,
     pub network_enforce_tls_localhost: bool,
     pub network_enforce_tls_onion: bool,
@@ -360,6 +370,10 @@ pub struct Preferences {
     pub network_http_disk_cache: String,
     /// Maximum size of the disk cache file in bytes.
     pub network_http_disk_cache_size: u64,
+    /// brow (phase 2): enable the HTTP/3 (RFC 9114) opportunistic fetch path.
+    /// Origins advertising `Alt-Svc: h3` are raced via QUIC with automatic
+    /// fallback to HTTP/2 → HTTP/1.1 on any failure.
+    pub network_http3_enabled: bool,
     /// A url for a http proxy. We treat an empty string as no proxy.
     pub network_http_proxy_uri: String,
     /// A url for a https proxy. We treat an empty string as no proxy.
@@ -375,6 +389,10 @@ pub struct Preferences {
     /// Force the use of `rust-webpki` verification for CA roots. If this is false (the
     /// default), then `rustls-platform-verifier` will be used, except on Android where
     /// `rust-webpki` is always used.
+    /// brow (phase 2): lower bound for TLS versions negotiated on classic
+    /// (non-QUIC) connections. Accepted values: "TLSv1.2", "TLSv1.3".
+    /// Empty means TLSv1.2. QUIC/HTTP-3 always uses TLS 1.3 (RFC 9001).
+    pub network_tls_min_version: String,
     pub network_use_webpki_roots: bool,
     /// The maximum content size we will forward for preallocation, defaults to 5MB
     pub network_max_content_length: u64,
@@ -575,17 +593,25 @@ impl Preferences {
             media_glvideo_enabled: false,
             media_testing_enabled: false,
             network_connection_timeout: 15,
+            network_dns_over_https_enabled: true,
+            // Empty strings mean "use brow's built-in defaults", resolved in
+            // `connector::create_dns_resolver` (the defaults struct must stay
+            // const-constructible).
+            network_dns_over_https_templates: String::new(),
+            network_dns_bootstrap_addresses: String::new(),
             network_enforce_tls_enabled: false,
             network_enforce_tls_localhost: false,
             network_enforce_tls_onion: false,
             network_http_cache_disabled: false,
             network_http_disk_cache: String::new(),
+            network_http3_enabled: true,
             network_http_disk_cache_size: 1024 * 1024 * 100, // Roughtly 100MB
             network_http_proxy_uri: String::new(),
             network_https_proxy_uri: String::new(),
             network_http_no_proxy: String::new(),
             network_http_cache_size: 5000,
             network_local_directory_listing_enabled: true,
+            network_tls_min_version: String::new(),
             network_use_webpki_roots: false,
             network_max_content_length: 5 * 1024 * 1024,
             perf_thread_boost_enabled: true,
