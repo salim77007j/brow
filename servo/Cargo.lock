@@ -1218,6 +1218,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "brow-privacy"
+version = "0.1.0"
+dependencies = [
+ "aho-corasick",
+ "criterion",
+ "log",
+ "memchr",
+ "once_cell",
+ "parking_lot",
+ "regex",
+ "serde",
+ "serde_json",
+ "url",
+]
+
+[[package]]
 name = "brow-resbench"
 version = "0.1.0"
 dependencies = [
@@ -10178,6 +10194,7 @@ dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
  "brow-net-core",
+ "brow-privacy",
  "bytes",
  "chrono",
  "content-security-policy",

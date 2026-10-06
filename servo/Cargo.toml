@@ -9,6 +9,7 @@ members = [
     "support/brow-bench",
     "support/brow-cache",
     "support/brow-net-core",
+    "support/brow-privacy",
     "support/brow-resbench",
     "support/brow-shell-core",
     "tests/capi",
@@ -36,6 +37,7 @@ rust-version = "1.88.0"
 
 [workspace.dependencies]
 brow-net-core = { version = "0.1.0", path = "support/brow-net-core" }
+brow-privacy = { version = "0.1.0", path = "support/brow-privacy" }
 brow-cache = { version = "0.1.0", path = "support/brow-cache" }
 brow-shell-core = { version = "0.1.0", path = "support/brow-shell-core" }
 mimalloc = { version = "0.1.52" }
