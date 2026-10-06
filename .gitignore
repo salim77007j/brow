@@ -42,3 +42,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# Phase 5 packaging staging (CI workspace)
+packaging/payload/

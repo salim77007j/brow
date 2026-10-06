@@ -1,0 +1,294 @@
+name: brow release
+
+# brow (phase 5): tag-driven release engineering.
+#
+# Cutting a release:
+#   git tag v0.5.0 && git push origin v0.5.0
+#
+# The workflow builds the production-stripped engine profile on both
+# platforms (LTO, codegen-units=1, opt-level="s", strip — the
+# "ultra-lightweight" profile), then produces:
+#   * Windows:  brow-<v>-x64.msi (WiX 7), portable zip
+#   * Linux:    AppImage, .deb (nfpm + dpkg cross-check), .rpm (nfpm),
+#               portable tar.gz
+#   * SHA256SUMS over every artifact (platform-uniform manifest format)
+# and publishes them on the GitHub Release for the tag.
+#
+# A workflow_dispatch dry-run builds artifacts without publishing.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version without the leading v (e.g. 0.5.0)"
+        required: true
+        default: "0.5.0"
+      create_release:
+        description: "Publish the GitHub Release (uncheck for a dry run)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  linux-x86_64:
+    name: Linux x86_64 — AppImage / .deb / .rpm / tar.gz
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            V="${{ inputs.version }}"
+          else
+            V="${GITHUB_REF_NAME#v}"
+          fi
+          case "$V" in
+            v*|*[^0-9A-Za-z.-_]*) echo "invalid version: $V" >&2; exit 2 ;;
+          esac
+          echo "BROW_VERSION=$V" >> "$GITHUB_ENV"
+          echo "release version: $V"
+
+      - name: Show pinned toolchain (rustup auto-installs rust-toolchain.toml)
+        working-directory: servo
+        run: rustup show
+
+      - name: Install build dependencies (mirrors servo's Linux buildbook)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake gperf ninja-build pkg-config python3 \
+            libx11-dev libx11-xcb-dev libxcb1-dev libxcb-render0-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev \
+            libxkbcommon-x11-dev libwayland-dev wayland-protocols \
+            libegl1-mesa-dev libgl1-mesa-dev \
+            libfontconfig1-dev libfreetype6-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+            libasound2-dev libdbus-1-dev libudev-dev
+
+      - name: Build brow-shell (production-stripped, locked)
+        working-directory: servo
+        run: ./mach build --locked --profile production-stripped
+
+      - name: Stage payload
+        run: |
+          mkdir -p packaging/payload packaging/dist
+          cp servo/target/production-stripped/brow-shell packaging/payload/brow
+          strip packaging/payload/brow
+          cp -R servo/resources packaging/payload/resources
+
+      - name: Portable tarball
+        run: |
+          STAGE="$(mktemp -d)"
+          mkdir "$STAGE/brow"
+          cp -R packaging/payload/. "$STAGE/brow/"
+          tar -C "$STAGE" -czf \
+            "packaging/dist/brow-${BROW_VERSION}-x86_64-linux-gnu.tar.gz" brow
+          rm -rf "$STAGE"
+
+      - name: .deb via dpkg (toolchain-free cross-check build, not shipped)
+        run: |
+          mkdir -p /tmp/dpkg-check
+          ./packaging/linux/build-deb.sh \
+            --payload packaging/payload \
+            --version "$BROW_VERSION" \
+            --out /tmp/dpkg-check
+
+      - name: Install nfpm (pinned via NFPM_VERSION)
+        # Pinned default keeps releases reproducible; set NFPM_VERSION=latest
+        # to float. The tag is resolved from the releases/latest REDIRECT (no
+        # GitHub API call — shared-runner IPs exhaust the unauthenticated
+        # API quota, which breaks the build spuriously).
+        run: |
+          NFPM_VERSION="${NFPM_VERSION:-v2.47.0}"
+          if [ "$NFPM_VERSION" = "latest" ]; then
+            NFPM_VERSION="$(curl -fsSL -o /dev/null -w '%{url_effective}' \
+              https://github.com/goreleaser/nfpm/releases/latest | sed 's#.*/tag/##')"
+          fi
+          echo "installing nfpm ${NFPM_VERSION}"
+          curl -fsSL --retry 3 \
+            "https://github.com/goreleaser/nfpm/releases/download/${NFPM_VERSION}/nfpm_${NFPM_VERSION#v}_Linux_x86_64.tar.gz" \
+            | tar -xz -C /tmp nfpm
+          install -m 0755 /tmp/nfpm /usr/local/bin/nfpm
+          nfpm --version
+
+      - name: .deb + .rpm via nfpm (canonical path)
+        run: |
+          export BROW_VERSION
+          nfpm package -f packaging/nfpm.yaml -p deb \
+            -t "packaging/dist/brow_${BROW_VERSION}_amd64.deb"
+          nfpm package -f packaging/nfpm.yaml -p rpm \
+            -t "packaging/dist/brow-${BROW_VERSION}-1.x86_64.rpm"
+
+      - name: Cross-check nfpm .deb against the dpkg-built .deb
+        # Two independent implementations of the same layout must agree on
+        # every functionally required path. (The dpkg build additionally
+        # carries /usr/share/doc/brow/copyright — Debian-canonical, verified
+        # separately — which is why a full diff is not used here.)
+        run: |
+          NFPM_DEB="packaging/dist/brow_${BROW_VERSION}_amd64.deb"
+          DPKG_DEB="/tmp/dpkg-check/brow_${BROW_VERSION}_amd64.deb"
+          for deb in "$NFPM_DEB" "$DPKG_DEB"; do
+            for pat in \
+              '^-.*usr/lib/brow/brow$' \
+              'usr/lib/brow/resources/$' \
+              'usr/lib/brow/resources/easylist.txt$' \
+              '^l.*usr/bin/brow ' \
+              'usr/share/applications/brow.desktop$' \
+              'usr/share/metainfo/brow.metainfo.xml$'; do
+              dpkg-deb -c "$deb" | grep -E "$pat" >/dev/null \
+                || { echo "MISSING [$pat] in $deb" >&2; exit 1; }
+            done
+          done
+          echo "layout cross-check passed for both .deb implementations"
+
+      - name: AppImage
+        run: |
+          ./packaging/linux/build-appimage.sh \
+            --payload packaging/payload \
+            --version "$BROW_VERSION" \
+            --out packaging/dist
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64
+          path: packaging/dist/*
+          if-no-files-found: error
+
+  windows-x86_64:
+    name: Windows x86_64 — MSI / portable zip
+    runs-on: windows-2022
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release version
+        shell: pwsh
+        run: |
+          $v = if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            "${{ inputs.version }}"
+          } else {
+            $env:GITHUB_REF_NAME -replace '^v', ''
+          }
+          "BROW_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "release version: $v"
+
+      - name: Install LLVM and Clang (aws-lc-rs bindgen, mirrors servo/windows.yml)
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "20.1"
+          directory: ${{ runner.temp }}/llvm
+
+      - name: Set LIBCLANG_PATH
+        shell: pwsh
+        run: |
+          $llvmBin = Join-Path $env:LLVM_PATH "bin"
+          "LIBCLANG_PATH=$llvmBin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Repair WinGet (runner hygiene, mirrors servo/windows.yml)
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          Install-Module -Name Microsoft.WinGet.Client -Repository PSGallery -Force
+          Repair-WinGetPackageManager -Latest -Force -AllUsers
+
+      - name: Install WiX 7 CLI
+        shell: powershell
+        run: |
+          winget install --silent --exact WiXToolset.WiXCLI --version 7.0.0.0 --accept-source-agreements
+          # The WiX installer sets the WIX7 environment variable to the install
+          # directory; expose it on PATH for subsequent steps.
+          $wixBin = [System.Environment]::GetEnvironmentVariable("WIX7", "Machine")
+          $wixBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Setup Python (mach bootstrap)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch + bootstrap gstreamer
+        working-directory: servo
+        shell: pwsh
+        run: |
+          .\mach fetch
+          .\mach bootstrap-gstreamer
+
+      - name: Build brow-shell (production-stripped, locked)
+        working-directory: servo
+        shell: pwsh
+        run: .\mach build --locked --profile production-stripped
+
+      - name: Stage payload
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path packaging\payload, packaging\dist | Out-Null
+          Copy-Item servo\target\production-stripped\brow-shell.exe packaging\payload\brow.exe
+          Copy-Item servo\resources packaging\payload\resources -Recurse
+
+      - name: Portable zip
+        shell: pwsh
+        run: |
+          powershell -File packaging\windows\make-portable.ps1 `
+            -PayloadDir packaging\payload -Version $env:BROW_VERSION -OutDir packaging\dist
+
+      - name: MSI (WiX 7)
+        shell: pwsh
+        run: |
+          powershell -File packaging\windows\build-msi.ps1 `
+            -PayloadDir packaging\payload -Version $env:BROW_VERSION -OutDir packaging\dist
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64
+          path: packaging/dist/*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release + SHA256SUMS
+    needs: [linux-x86_64, windows-x86_64]
+    if: ${{ github.event_name == 'push' || inputs.create_release == true }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: packaging/dist
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS (platform-uniform manifest)
+        run: |
+          ./packaging/generate-checksums.sh packaging/dist
+          echo "--- SHA256SUMS ---"
+          cat packaging/dist/SHA256SUMS
+
+      - name: Verify manifest integrity (sha256sum -c)
+        run: cd packaging/dist && sha256sum -c SHA256SUMS
+
+      - name: Publish release
+        if: ${{ github.event_name == 'push' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: packaging/dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
