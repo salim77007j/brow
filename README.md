@@ -36,7 +36,7 @@ full module map and our extension-point strategy).
 | 2 | Engine enhancement & modernization (HTTP/3+QUIC, DoH/DoT, modern CSS/JS, hardening) | ✅ **Complete** |
 | 3 | Ultra-lightweight UI + extreme resource optimization (<100 MB/tab) | ✅ **Complete** |
 | 4 | Stealth ad blocker & privacy engine (2026-grade) | ✅ **Complete** |
-| 5 | Build, package & cross-platform compilation (Windows/Linux) | ⏸ Awaiting authorization |
+| 5 | Build, package & cross-platform compilation (Windows/Linux) | ✅ **Complete** — [PHASE_5_REPORT.md](PHASE_5_REPORT.md), [docs/PACKAGING.md](docs/PACKAGING.md) |
 | 6 | Comprehensive testing & competitive validation vs Chrome | ⏸ |
 
 Phase gates are strict: work on phase *N+1* starts only after explicit authorization.
