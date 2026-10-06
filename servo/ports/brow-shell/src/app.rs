@@ -11,14 +11,12 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use slint::platform::{
-    Key as SlintKey, PointerEventButton, WindowAdapter, WindowEvent as SlintWindowEvent,
-};
+use slint::platform::{PointerEventButton, WindowAdapter, WindowEvent as SlintWindowEvent};
 use slint::{LogicalPosition, SharedString};
 use servo::{
     InputEvent, MouseButton, MouseButtonAction, MouseButtonEvent, MouseLeftViewportEvent,
-    MouseMoveEvent, RenderingContext, Scroll, WebView, WebViewBuilder, WebViewPoint,
-    WebViewVector, WheelDelta, WheelEvent, WheelMode,
+    MouseMoveEvent, RenderingContext, Scroll, WebViewBuilder, WebViewPoint, WebViewVector,
+    WheelDelta, WheelEvent, WheelMode,
 };
 use url::Url;
 use webrender_api::units::DevicePoint;
@@ -85,6 +83,12 @@ impl winit::application::ApplicationHandler<BrowEvent> for BrowApp {
             state.chrome_window_id = Some(chrome_window.id());
 
             let display_handle = active.display_handle().expect("display handle");
+            // Promote to 'static: RawDisplayHandle is plain data (an id/pointer);
+            // the display connection itself is owned by the event loop, which
+            // outlives every surface created here.
+            let display_handle = unsafe {
+                raw_window_handle::DisplayHandle::borrow_raw(display_handle.as_raw())
+            };
             let surface = Rc::new(ChromeSurface::new_attached(
                 chrome_window,
                 display_handle,
@@ -852,7 +856,7 @@ impl BrowState {
                             // extent). Exact-offset restore needs the engine's
                             // session-restore path.
                             let scale = content.webview.device_pixels_per_css_pixel();
-                            let dy = (scroll_y * scale.get()) as f32;
+                            let dy = (scroll_y as f32) * scale.get();
                             content.webview.notify_scroll_event(
                                 Scroll::Delta(WebViewVector::Device(
                                     servo::DeviceVector2D::new(0.0, dy),
