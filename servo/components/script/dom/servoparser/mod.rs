@@ -1547,6 +1547,18 @@ impl FetchResponseListener for ParserContext {
                     let page = resources::read_string(Resource::NetErrorHTML);
                     page.replace("${reason}", &format!("{:?}", error))
                 },
+                NetworkError::BlockedByPrivacyFilter => {
+                    // brow (phase 4): the privacy engine dropped this request
+                    // (filter-list match or CNAME-cloaked tracker host).
+                    // Surface a dedicated explanation instead of a generic
+                    // network error so the block is visible and auditable.
+                    let page = resources::read_string(Resource::NetErrorHTML);
+                    page.replace(
+                        "${reason}",
+                        "The request was blocked by brow's privacy engine \
+                         (filter-list match or CNAME-cloaked tracker host).",
+                    )
+                },
                 NetworkError::LoadCancelled => {
                     // The next load will show a page
                     return;
