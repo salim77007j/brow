@@ -1218,6 +1218,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "brow-phase6"
+version = "0.1.0"
+dependencies = [
+ "brow-net-core",
+ "bytes",
+ "html5ever",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-util",
+ "serde",
+ "serde_json",
+ "tokio",
+ "webpki-roots 0.26.11",
+]
+
+[[package]]
 name = "brow-privacy"
 version = "0.1.0"
 dependencies = [

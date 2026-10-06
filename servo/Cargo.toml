@@ -9,6 +9,7 @@ members = [
     "support/brow-bench",
     "support/brow-cache",
     "support/brow-net-core",
+    "support/brow-phase6",
     "support/brow-privacy",
     "support/brow-resbench",
     "support/brow-shell-core",

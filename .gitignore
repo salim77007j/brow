@@ -45,3 +45,6 @@ venv/
 
 # Phase 5 packaging staging (CI workspace)
 packaging/payload/
+
+# Phase 6 harness local run output (committed artifacts live in phase6-results/)
+servo/results/
