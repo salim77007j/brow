@@ -101,7 +101,10 @@ jobs:
         run: cargo test -p brow-privacy --locked || cargo test -p brow-privacy
 
       - name: Decision throughput + engine build benchmarks (criterion, smoke)
-        run: cargo bench -p brow-privacy -- --warm-up-time 1 --measurement-time 3
+        # Target the criterion bench explicitly: bare `cargo bench -p ... -- <flags>`
+        # also runs the lib unittests harness, which rejects criterion-only options
+        # ("Unrecognized option: 'warm-up-time'") and fails the job.
+        run: cargo bench -p brow-privacy --bench match_bench -- --warm-up-time 1 --measurement-time 3
 
   # brow (phase 3): compile-gate the Slint chrome shell (desktop Linux).
   brow-shell-check:
@@ -121,7 +124,9 @@ jobs:
           rustup default $(awk -F'"' '/channel =/ {print $2}' rust-toolchain.toml)
 
       - name: Install headless compile prerequisites
-        run: sudo apt-get update && sudo apt-get install -y pkg-config libx11-dev libxcb1-dev
+        # libfreetype-dev: freetype-sys (Slint font pipeline) resolves freetype2 via
+        # pkg-config; libfontconfig1-dev/libexpat1-dev: fontdb/system font discovery.
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libx11-dev libxcb1-dev libfreetype-dev libfontconfig1-dev libexpat1-dev
 
       - name: cargo check (brow-shell)
         run: cargo check -p brow-shell
@@ -165,6 +170,12 @@ jobs:
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL || true
           sudo docker image prune --force || true
           df -h /
+
+      - name: Install uv (required by mach's Python environment management)
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          uv --version
 
       - name: Install Servo build dependencies
         run: |
