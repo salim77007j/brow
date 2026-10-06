@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- brow AppStream metadata (Phase 5).
+     Installed to /usr/share/metainfo/brow.metainfo.xml by the .deb and .rpm.
+     Validated against the AppStream 1.0 specification; screenshots are a
+     known TODO tracked in PHASE_5_REPORT.md section 6 (needs a GUI session
+     to capture, which headless CI cannot produce honestly). -->
+<component type="desktop-application">
+  <id>brow.desktop</id>
+  <name>brow</name>
+  <summary>Ultra-lightweight, privacy-first web browser</summary>
+  <description>
+    <p>
+      brow is an ultra-lightweight, ultra-fast, privacy-first web browser
+      built on the Servo rendering engine and written in Rust. It pairs the
+      parallel Stylo CSS engine and WebRender compositor with a network-level
+      privacy stack that never phones home.
+    </p>
+    <ul>
+      <li>Network-level ad and tracker blocking (EasyList/ABP engine, ~55k rules, microsecond decisions)</li>
+      <li>CNAME cloaking detection uncloaks third-party trackers hiding behind first-party DNS aliases</li>
+      <li>Anti-fingerprinting: canvas/WebGL/AudioContext defense with per-origin seeds</li>
+      <li>CHIPS partitioned-cookie enforcement so embedded services cannot join your identity across sites</li>
+      <li>HTTP/3 + QUIC transport, DNS-over-HTTPS, and COOP/COEP/CORP policy enforcement</li>
+      <li>Tab hibernation and content-addressed dedup caching for a &lt;100 MB per-tab memory budget</li>
+    </ul>
+  </description>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MPL-2.0</project_license>
+  <developer_name translatable="no">brow engineering</developer_name>
+  <url type="homepage">https://github.com/salim77007j/brow</url>
+  <url type="bugtracker">https://github.com/salim77007j/brow/issues</url>
+  <categories>
+    <category>Network</category>
+    <category>WebBrowser</category>
+  </categories>
+  <provides>
+    <binary>brow</binary>
+    <mediatype>text/html</mediatype>
+    <mediatype>application/xhtml+xml</mediatype>
+    <mediatype>x-scheme-handler/http</mediatype>
+    <mediatype>x-scheme-handler/https</mediatype>
+  </provides>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.5.0" date="2026-10-06" type="stable">
+      <description>
+        <p>
+          First packaged release: cross-platform distribution engineering —
+          Windows MSI and portable zip, Linux AppImage, .deb and .rpm packages,
+          SHA256SUMS verification for every artifact, and a tag-driven release
+          pipeline.
+        </p>
+      </description>
+    </release>
+  </releases>
+</component>

@@ -1,0 +1,19 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=brow
+GenericName=Web Browser
+Comment=Ultra-lightweight, privacy-first browser powered by the Servo engine
+Exec=brow %u
+Icon=brow
+Terminal=false
+Categories=Network;WebBrowser;
+Keywords=web;browser;internet;privacy;servo;brow;
+MimeType=text/html;text/xml;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;
+StartupNotify=true
+StartupWMClass=brow
+Actions=new-window;
+
+[Desktop Action new-window]
+Name=Open a New Window
+Exec=brow %u
