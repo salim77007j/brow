@@ -1,0 +1,130 @@
+name: brow Phase 6 comparison
+
+# Phase 6 automation: produce the apples-to-apples comparison data that a
+# 2-core sandbox cannot. Two independent jobs:
+#   1. brow pipeline — the 10-category bench + stress harness against the
+#      live web (same crates as the engine net stack + html5ever).
+#   2. Chrome resource profile — real Chrome (headless) measured with
+#      brow-resbench's /proc sampler, so resource numbers share one
+#      methodology with brow's own runs.
+# Results are uploaded as artifacts and committed by maintainers into
+# FINAL_COMPARISON_REPORT.md after review.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly refresh, Monday 03:00 UTC — keeps reference data current.
+    - cron: "0 3 * * 1"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  brow-pipeline:
+    name: brow — 10-category bench + stress (live web)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: servo
+    steps:
+      - name: Checkout brow
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (pinned by servo/rust-toolchain.toml)
+        run: |
+          rustup toolchain install $(awk -F'"' '/channel =/ {print $2}' rust-toolchain.toml) --profile minimal
+          rustup default $(awk -F'"' '/channel =/ {print $2}' rust-toolchain.toml)
+
+      - name: Hermetic tests (no network)
+        run: cargo test -p brow-phase6
+
+      - name: Build harness (release)
+        run: cargo build --release -p brow-phase6
+
+      - name: 10-category page benchmark (100 URLs)
+        run: |
+          ./target/release/brow-phase6 bench \
+            --concurrency 8 --timeout 15 --out results/ci
+
+      - name: Stress test (2 sequential rounds over the matrix)
+        run: |
+          ./target/release/brow-phase6 stress \
+            --rounds 2 --timeout 15 --out results/ci
+
+      - name: Upload brow pipeline artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: brow-phase6-pipeline
+          path: |
+            servo/results/ci/bench.json
+            servo/results/ci/bench.md
+            servo/results/ci/stress.json
+            servo/results/ci/stress.md
+          retention-days: 90
+          if-no-files-found: error
+
+  chrome-resource:
+    name: Chrome — headless resource profile (brow-resbench)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout brow
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (pinned by servo/rust-toolchain.toml)
+        run: |
+          cd servo
+          rustup toolchain install $(awk -F'"' '/channel =/ {print $2}' rust-toolchain.toml) --profile minimal
+          rustup default $(awk -F'"' '/channel =/ {print $2}' rust-toolchain.toml)
+
+      - name: Install Google Chrome stable
+        run: |
+          wget -qO- https://dl.google.com/linux/linux_signing_key.pub \
+            | sudo gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg
+          echo "deb [signed-by=/usr/share/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" \
+            | sudo tee /etc/apt/sources.list.d/google-chrome.list
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+          google-chrome --version
+
+      - name: Build the resource harness
+        run: cd servo && cargo build --release -p brow-resbench
+
+      - name: Measure Chrome (headless, one instance per tab, warmup/active/idle)
+        run: |
+          cd servo
+          mkdir -p results/ci
+          cat > /tmp/chrome-headless.json <<'PROFILE'
+          {
+            "name": "chrome-headless-3-tabs",
+            "command": "/usr/bin/google-chrome",
+            "arg_template": [
+              "--headless=new", "--disable-gpu", "--no-first-run",
+              "--disable-extensions", "--disable-background-networking",
+              "--user-data-dir=/tmp/chrome-profile-brow", "{url}"
+            ],
+            "tabs": 3,
+            "urls": [
+              "https://en.wikipedia.org/wiki/Web_browser",
+              "https://news.ycombinator.com",
+              "https://developer.mozilla.org"
+            ],
+            "warmup_secs": 10,
+            "active_secs": 30,
+            "idle_secs": 30,
+            "interval_ms": 250
+          }
+          PROFILE
+          # All three invocations share one user-data-dir, so Chrome coalesces
+          # into a single instance; its process tree (browser + renderers) is
+          # exactly what brow-resbench's tree sampler captures.
+          ./target/release/brow-resbench run /tmp/chrome-headless.json --out results/ci/chrome-resource.json
+
+      - name: Upload Chrome resource artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: chrome-resource-profile
+          path: servo/results/ci/chrome-resource.json
+          retention-days: 90
+          if-no-files-found: error

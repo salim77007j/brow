@@ -37,7 +37,7 @@ full module map and our extension-point strategy).
 | 3 | Ultra-lightweight UI + extreme resource optimization (<100 MB/tab) | ✅ **Complete** |
 | 4 | Stealth ad blocker & privacy engine (2026-grade) | ✅ **Complete** |
 | 5 | Build, package & cross-platform compilation (Windows/Linux) | ✅ **Complete** — [PHASE_5_REPORT.md](PHASE_5_REPORT.md), [docs/PACKAGING.md](docs/PACKAGING.md) |
-| 6 | Comprehensive testing & competitive validation vs Chrome | ⏸ |
+| 6 | Comprehensive testing & competitive validation vs Chrome | ✅ **Complete** — [PHASE_6_REPORT.md](PHASE_6_REPORT.md), [FINAL_COMPARISON_REPORT.md](FINAL_COMPARISON_REPORT.md) |
 
 Phase gates are strict: work on phase *N+1* starts only after explicit authorization.
 
@@ -53,15 +53,14 @@ brow/
 │   ├── support/brow-privacy/       # privacy engine: EasyList filtering, CNAME uncloaking, CHIPS, anti-fingerprinting (phase 4)
 │   ├── support/brow-net-core/      # HTTP/3+QUIC, DoH, Alt-Svc, COOP/COEP/CORP engine (phase 2)
 │   ├── support/brow-bench/         # TTFB protocol benchmark (phase 2)
+│   ├── support/brow-phase6/        # 10-category bench + stress harness, html5ever pipeline (phase 6)
 │   └── resources/easylist.txt      # runtime filter list (real EasyList snapshot, CC BY-SA 3.0, phase 4)
 ├── docs/                   # Architecture analysis, build guides (incl. PGO), upstream provenance
-├── .github/workflows/      # CI (engine build + fast gates) and PGO pipeline
+├── phase6-results/         # Phase 6 measured artifacts (bench + stress JSON/Markdown, verbatim)
+├── .github/workflows/      # CI (engine build + fast gates), PGO pipeline, Phase 6 comparison
 ├── LICENSE                 # MPL-2.0 (same license family as Servo itself)
-├── PHASE_1_REPORT.md       # Phase 1 completion report
-├── PHASE_2_REPORT.md       # Phase 2 completion report
-├── PHASE_3_REPORT.md       # Phase 3 completion report
-├── PHASE_4_REPORT.md       # Phase 4 completion report
-└── README.md
+├── PHASE_1_REPORT.md … PHASE_6_REPORT.md
+└── FINAL_COMPARISON_REPORT.md   # Phase 6: 10-category benchmark vs Chrome, stress, methodology
 ```
 
 ## Privacy (phase 4)
