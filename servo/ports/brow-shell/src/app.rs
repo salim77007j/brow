@@ -846,6 +846,20 @@ impl BrowState {
                 }
                 TabEvent::Discarded(id, _payload) => self.destroy_webview(id),
                 TabEvent::Closed(id) => self.destroy_webview(id),
+                // Core-internal bookkeeping events (chrome model sync); the
+                // engine side needs no action beyond the UI refresh below.
+                TabEvent::TitleChanged(_id, _title) => {}
+                TabEvent::UrlChanged(id, url) => {
+                    // A navigation completed: point the existing WebView at
+                    // the new URL if it somehow drifted (defensive; the
+                    // engine usually initiates this itself).
+                    if let Some(content) = self.content.get(&id) {
+                        if content.webview.url().map(|u| u != url).unwrap_or(true) {
+                            content.webview.load(url);
+                        }
+                    }
+                }
+                TabEvent::Noop(_id) => {}
                 TabEvent::Restored(id, url, scroll_y, zoom) => {
                     self.ensure_webview(id, url.clone(), active, delegate);
                     if let Some(content) = self.content.get(&id) {
