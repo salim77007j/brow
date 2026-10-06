@@ -127,6 +127,7 @@ fn create_http_state(fc: Option<GenericEmbedderProxy<NetToEmbedderMsg>>) -> Http
             brow_net_core::altsvc::AltSvcCache::new(),
         )),
         h3_client: tokio::sync::OnceCell::new(),
+        privacy: std::sync::Arc::new(net::privacy::PrivacyState::new(None)),
     }
 }
 

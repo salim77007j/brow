@@ -225,6 +225,9 @@ fn create_http_states(
         alt_svc_cache.evict_expired();
     }
     let alt_svc_cache = StdArc::new(Mutex::new(alt_svc_cache));
+    let privacy = StdArc::new(crate::privacy::PrivacyState::new(
+        config_dir.as_ref().map(|d| d.join("privacy_stats.json")),
+    ));
     let http_state = HttpState {
         hsts_list: RwLock::new(hsts_list),
         cookie_jar: RwLock::new(cookie_jar),
@@ -240,6 +243,7 @@ fn create_http_states(
         embedder_proxy: embedder_proxy.clone(),
         alt_svc_cache: StdArc::clone(&alt_svc_cache),
         h3_client: OnceCell::new(),
+        privacy: StdArc::clone(&privacy),
     };
 
     let override_manager = CertificateErrorOverrideManager::new();
@@ -258,6 +262,7 @@ fn create_http_states(
         embedder_proxy,
         alt_svc_cache: StdArc::new(Mutex::new(brow_net_core::altsvc::AltSvcCache::new())),
         h3_client: OnceCell::new(),
+        privacy: StdArc::new(crate::privacy::PrivacyState::new(None)),
     };
 
     (Arc::new(http_state), Arc::new(private_http_state))
@@ -690,6 +695,8 @@ impl ResourceChannelManager {
                         config_dir,
                         "alt_svc_cache.json",
                     );
+                    // brow (phase 4): persist privacy blocking statistics.
+                    http_state.privacy.persist();
                 }
                 self.resource_manager.exit();
 
@@ -793,6 +800,21 @@ impl CoreResourceManager {
         source: CookieSource,
         http_state: &Arc<HttpState>,
     ) {
+        // brow (phase 4): CHIPS receive gate — a `Partitioned` cookie
+        // without the `Secure` attribute MUST be ignored
+        // (draft-ietf-httpbis-rfc6265bis §5.6.3).
+        if !http_state
+            .privacy
+            .chips_receive_allowed_attrs(
+                cookie.partitioned().unwrap_or(false),
+                cookie.secure().unwrap_or(false),
+            )
+        {
+            log::info!(
+                "brow privacy: rejected Partitioned cookie without Secure for {request}"
+            );
+            return;
+        }
         if let Some(cookie) = ServoCookie::new_wrapped(cookie, request, source) {
             let mut cookie_jar = http_state.cookie_jar.write();
             cookie_jar.push(cookie, request, source)

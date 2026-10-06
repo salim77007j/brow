@@ -208,6 +208,59 @@ pub async fn fetch_with_cors_cache(
     // Step 4. Populate request from client given request.
     request.populate_request_from_client();
 
+    // brow (phase 4): privacy engine gate. Runs before any network work:
+    // (a) network filter decision on the request URL; (b) for https, a
+    // CNAME-cloaking inspection — when the host's canonical name lands on a
+    // different registrable domain and THAT host matches a filter rule, the
+    // request is dropped as a disguised tracker. Results surface as
+    // `NetworkError::BlockedByPrivacyFilter`.
+    if matches!(request.current_url().scheme(), "http" | "https") {
+        let current_url = request.current_url();
+        if let Some(blocked) = context
+            .state
+            .privacy
+            .check_request(&request.origin, &current_url, request.destination)
+        {
+            log::info!(
+                "brow privacy: blocked {} via rule: {}",
+                current_url,
+                blocked.rule
+            );
+            return Response::network_error(NetworkError::BlockedByPrivacyFilter);
+        }
+        if current_url.scheme() == "https" {
+            if let Some(verdict) = context.state.privacy.check_cname(&current_url).await {
+                let canonical = match &verdict.reason {
+                    brow_privacy::cname::CloakReason::CrossDomainAlias {
+                        canonical, ..
+                    } => canonical.clone(),
+                };
+                let mut canonical_url = current_url.as_url().clone();
+                if canonical_url.set_host(Some(&canonical)).is_ok() {
+                    let site = crate::privacy::PrivacyState::site_of(
+                        &request.origin,
+                        current_url.as_url(),
+                    );
+                    if let Some(blocked) = context.state.privacy.check_canonical(
+                        &site,
+                        &canonical_url,
+                        request.destination,
+                    ) {
+                        log::info!(
+                            "brow privacy: blocked cloaked {} -> {} via rule: {}",
+                            current_url,
+                            canonical,
+                            blocked.rule
+                        );
+                        return Response::network_error(
+                            NetworkError::BlockedByPrivacyFilter,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     // Step 5. If request’s client is non-null, then:
     // TODO
     // Step 5.1. Set taskDestination to request’s client’s global object.

@@ -386,6 +386,22 @@ pub struct Preferences {
     /// Notice that this is not equal to the number of different urls in the cache.
     pub network_http_cache_size: u64,
     pub network_local_directory_listing_enabled: bool,
+    /// brow (phase 4): master switch for the network ad/tracker filter
+    /// (EasyList/ABP syntax lists, evaluated by brow-privacy).
+    pub network_privacy_filter_enabled: bool,
+    /// brow (phase 4): filesystem path to the filter list. Empty means the
+    /// default `resources/easylist.txt` location (list may be absent —
+    /// filtering then stays inactive while CNAME/CHIPS remain active).
+    pub network_privacy_filter_list_path: String,
+    /// brow (phase 4): CNAME-cloaking detection — chase DNS alias chains via
+    /// DoH and treat cross-registrable canonical names as trackers.
+    pub network_privacy_cname_detection_enabled: bool,
+    /// brow (phase 4): CHIPS — reject `Partitioned` cookies that lack the
+    /// `Secure` attribute (draft-ietf-httpbis-rfc6265bis §5.6.3).
+    pub network_privacy_chips_require_secure_partitioned: bool,
+    /// brow (phase 4): anti-fingerprinting defense level emitted as the
+    /// session userscript. One of "off", "standard", "strict".
+    pub network_privacy_fingerprint_level: String,
     /// Force the use of `rust-webpki` verification for CA roots. If this is false (the
     /// default), then `rustls-platform-verifier` will be used, except on Android where
     /// `rust-webpki` is always used.
@@ -618,6 +634,11 @@ impl Preferences {
             network_http_no_proxy: String::new(),
             network_http_cache_size: 5000,
             network_local_directory_listing_enabled: true,
+            network_privacy_filter_enabled: true,
+            network_privacy_filter_list_path: String::new(),
+            network_privacy_cname_detection_enabled: true,
+            network_privacy_chips_require_secure_partitioned: true,
+            network_privacy_fingerprint_level: String::new(),
             network_tls_min_version: String::new(),
             network_use_webpki_roots: false,
             network_max_content_length: 5 * 1024 * 1024,

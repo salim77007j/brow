@@ -21,6 +21,7 @@ pub mod http_loader;
 pub mod image_cache;
 pub mod local_directory_listing;
 pub mod protocols;
+pub mod privacy;
 pub mod request_interceptor;
 pub mod resource_thread;
 pub mod subresource_integrity;

@@ -123,6 +123,9 @@ pub struct HttpState {
     pub alt_svc_cache: StdArc<Mutex<brow_net_core::altsvc::AltSvcCache>>,
     /// brow (phase 2): the HTTP/3 (QUIC) client, bound lazily on first use.
     pub h3_client: crate::h3_loader::H3ClientCell,
+    /// brow (phase 4): privacy engine state — network filter, CNAME-cloaking
+    /// detection, CHIPS receive gate and blocking statistics.
+    pub privacy: StdArc<crate::privacy::PrivacyState>,
 }
 
 impl HttpState {

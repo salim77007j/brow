@@ -1184,6 +1184,9 @@ pub enum NetworkError {
     BlobURLStoreError(String),
     HttpError(String),
     DecompressionError,
+    /// brow (phase 4): the request was dropped by the privacy engine
+    /// (network filter match, or CNAME-cloaked tracker host).
+    BlockedByPrivacyFilter,
 }
 
 impl fmt::Debug for NetworkError {
@@ -1232,6 +1235,7 @@ impl fmt::Debug for NetworkError {
             },
             NetworkError::HttpError(s) => write!(f, "HTTP failure: {}", s),
             NetworkError::DecompressionError => write!(f, "Decompression error"),
+            NetworkError::BlockedByPrivacyFilter => write!(f, "Blocked by privacy filter"),
         }
     }
 }
