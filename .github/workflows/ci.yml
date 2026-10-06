@@ -78,6 +78,31 @@ jobs:
           PROFILE
           ./target/debug/brow-resbench run /tmp/ci-fixture.json
 
+  # brow (phase 4): fast, hermetic test job for the privacy engine —
+  # filter parsing/matching against the vendored real EasyList snapshot,
+  # CNAME-cloaking detection, CHIPS policy, fingerprint payloads.
+  brow-privacy:
+    name: Test brow-privacy (EasyList engine, CNAME, CHIPS, fingerprint)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: servo
+    steps:
+      - name: Checkout brow (with vendored servo/)
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (pinned by servo/rust-toolchain.toml)
+        run: |
+          rustup toolchain install $(awk -F'"' '/channel =/ {print $2}' rust-toolchain.toml) --profile minimal
+          rustup default $(awk -F'"' '/channel =/ {print $2}' rust-toolchain.toml)
+
+      - name: Unit + integration tests (real EasyList snapshot, cross-module flows)
+        run: cargo test -p brow-privacy --locked || cargo test -p brow-privacy
+
+      - name: Decision throughput + engine build benchmarks (criterion, smoke)
+        run: cargo bench -p brow-privacy -- --warm-up-time 1 --measurement-time 3
+
   # brow (phase 3): compile-gate the Slint chrome shell (desktop Linux).
   brow-shell-check:
     name: Check brow-shell (Slint chrome + libservo embed)

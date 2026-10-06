@@ -35,8 +35,8 @@ full module map and our extension-point strategy).
 | 1 | Environment setup, Servo v0.6.0 integration, deep architecture study, CI | ✅ **Complete** |
 | 2 | Engine enhancement & modernization (HTTP/3+QUIC, DoH/DoT, modern CSS/JS, hardening) | ✅ **Complete** |
 | 3 | Ultra-lightweight UI + extreme resource optimization (<100 MB/tab) | ✅ **Complete** |
-| 4 | Stealth ad blocker & privacy engine (2026-grade) | ⏸ Awaiting authorization |
-| 5 | Build, package & cross-platform compilation (Windows/Linux) | ⏸ |
+| 4 | Stealth ad blocker & privacy engine (2026-grade) | ✅ **Complete** |
+| 5 | Build, package & cross-platform compilation (Windows/Linux) | ⏸ Awaiting authorization |
 | 6 | Comprehensive testing & competitive validation vs Chrome | ⏸ |
 
 Phase gates are strict: work on phase *N+1* starts only after explicit authorization.
@@ -50,16 +50,37 @@ brow/
 │   ├── support/brow-shell-core/    # chrome brain: tabs, lifecycle, stores, i18n, memwatch (phase 3)
 │   ├── support/brow-cache/         # mmap content cache + cross-tab dedup pool (phase 3)
 │   ├── support/brow-resbench/      # resource benchmark harness vs Chrome/Firefox/Brave (phase 3)
+│   ├── support/brow-privacy/       # privacy engine: EasyList filtering, CNAME uncloaking, CHIPS, anti-fingerprinting (phase 4)
 │   ├── support/brow-net-core/      # HTTP/3+QUIC, DoH, Alt-Svc, COOP/COEP/CORP engine (phase 2)
-│   └── support/brow-bench/         # TTFB protocol benchmark (phase 2)
+│   ├── support/brow-bench/         # TTFB protocol benchmark (phase 2)
+│   └── resources/easylist.txt      # runtime filter list (real EasyList snapshot, CC BY-SA 3.0, phase 4)
 ├── docs/                   # Architecture analysis, build guides (incl. PGO), upstream provenance
 ├── .github/workflows/      # CI (engine build + fast gates) and PGO pipeline
 ├── LICENSE                 # MPL-2.0 (same license family as Servo itself)
 ├── PHASE_1_REPORT.md       # Phase 1 completion report
 ├── PHASE_2_REPORT.md       # Phase 2 completion report
 ├── PHASE_3_REPORT.md       # Phase 3 completion report
+├── PHASE_4_REPORT.md       # Phase 4 completion report
 └── README.md
 ```
+
+## Privacy (phase 4)
+
+brow blocks ads and trackers in-engine — no extension required:
+
+* **Network filtering** — EasyList/ABP syntax over a two-stage
+  Aho-Corasick engine; ~55k active rules from a real EasyList snapshot,
+  ~3–5 µs per decision, ~75 MiB engine RSS (debug-build upper bound).
+* **CNAME uncloaking** — DoH CNAME-chain chase at fetch time; disguised
+  first-party-looking tracker hosts are detected and dropped.
+* **CHIPS** — `Partitioned` cookies without `Secure` are rejected
+  (RFC 6265bis §5.6.3 MUST), partition-key policy engine included.
+* **Anti-fingerprinting** — per-session, per-origin-seeded defenses for
+  Canvas 2D, WebGL, AudioContext, fonts, ClientRects and `navigator`
+  scalars, generated as userscripts (Off / Standard / Strict).
+
+See [docs/PHASE4_PRIVACY.md](docs/PHASE4_PRIVACY.md) and
+[PHASE_4_REPORT.md](PHASE_4_REPORT.md).
 
 ## Quick Start (build the baseline engine)
 
