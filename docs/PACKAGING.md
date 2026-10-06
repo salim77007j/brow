@@ -9,7 +9,7 @@ A release tag `vX.Y.Z` (see `.github/workflows/release.yml`) produces:
 
 | Artifact | Platform | Producer | Contents |
 |---|---|---|---|
-| `brow-X.Y.Z-x64.msi` | Windows x86_64 | WiX 6 (`packaging/windows/brow.wxs`) | `brow.exe` + `resources\` into `%ProgramFiles%\brow`, Start-Menu shortcut, ARP icon |
+| `brow-X.Y.Z-x64.msi` | Windows x86_64 | WiX 6 (`packaging/windows/brow.wxs`) | `brow.exe` + runtime DLLs + `resources\` into `%ProgramFiles%\brow`, Start-Menu shortcut, ARP icon |
 | `brow-X.Y.Z-x86_64-windows-portable.zip` | Windows x86_64 | `packaging/windows/make-portable.ps1` | self-contained `brow\` folder (`brow.exe`, `resources\`, `brow.ico`, docs, `README.txt`) |
 | `brow-X.Y.Z-x86_64.AppImage` | Linux x86_64 | `packaging/linux/build-appimage.sh` (linuxdeploy) | AppDir with `usr/lib/brow/{brow,resources}`, custom AppRun, desktop entry, icon, ldd-bundled libs |
 | `brow_X.Y.Z_amd64.deb` | Debian/Ubuntu | **nfpm** (`packaging/nfpm.yaml`) | canonical Linux layout (below), curated runtime `Depends` |

@@ -7,10 +7,22 @@
            -out brow-0.5.0-x64.msi packaging/windows/brow.wxs
        The payload directory must contain brow.exe, a resources\ tree and
        the runtime DLLs (ANGLE/GStreamer/MSVC) staged next to brow.exe
-       (identical contract to the Linux packages). Payload/icon paths come
-       from environment variables so the same .wxs works locally and in CI:
-         BROW_PAYLOAD  staging dir with brow.exe + resources\
+       Payload/icon paths come from environment variables so the same .wxs
+       works locally and in CI:
+         BROW_PAYLOAD  staging dir with brow.exe + resources\ + *.dll
          BROW_ICON     packaging/icons/brow.ico
+
+       Harvesting note (WiX v4+ schema): <Files> is only valid as a child of
+       Feature/Directory/Fragment/... — NOT of <Component> (error WIX0005).
+       Under <Feature>, harvested components attach to that feature
+       automatically (Compiler.ParseFilesElement → ComplexReferenceParentType.
+       Feature), so no ComponentRef is needed. The harvester preserves
+       subdirectory structure relative to the pattern's literal directory
+       portion (HarvestFilesAndPayloadsCommand.GetWildcardFiles), so:
+         * "...resources\**" + Directory=INSTALLDIR + Subdirectory=resources
+           → INSTALLDIR\resources\<tree> (Subdirectory avoids flattening the
+           resources root into INSTALLDIR).
+         * "...payload\*.dll" + Directory=INSTALLDIR → DLLs beside brow.exe.
        -->
   <?define BrowVersion="0.1.0"?>
 
@@ -40,24 +52,6 @@
                 Source="$(env.BROW_PAYLOAD)\brow.exe"
                 KeyPath="yes" />
         </Component>
-        <Directory Id="ResourcesDir" Name="resources">
-          <Component Id="BrowResources"
-                     Guid="C3D4E5F6-A7B8-4C9D-8E1F-2A3B4C5D6E7F"
-                     Bitness="always64">
-            <!-- Harvests every file under resources\ recursively into this
-                 component; WiX expands them to File rows at compile time. -->
-            <Files Include="$(env.BROW_PAYLOAD)\resources\**" />
-          </Component>
-        </Directory>
-        <Component Id="BrowRuntimeDlls"
-                   Guid="D4E5F6A7-B8C9-4D0E-9F1A-3B4C5D6E7F8A"
-                   Bitness="always64">
-          <!-- Runtime DLLs (ANGLE, GStreamer libs + plugin subset, MSVC CRT)
-               staged next to brow.exe in the payload. Without them the
-               installed brow.exe cannot start on machines without GStreamer
-               installed. -->
-          <Files Include="$(env.BROW_PAYLOAD)\*.dll" />
-        </Component>
       </Directory>
     </StandardDirectory>
 
@@ -83,9 +77,15 @@
 
     <Feature Id="Complete" Level="1">
       <ComponentRef Id="BrowExe" />
-      <ComponentRef Id="BrowResources" />
-      <ComponentRef Id="BrowRuntimeDlls" />
       <ComponentRef Id="BrowShortcut" />
+      <!-- WiX v4+ harvest entries: see the header comment for why these
+           live under Feature (not Component) and why Subdirectory is
+           required to keep the resources\ tree nested. -->
+      <Files Include="$(env.BROW_PAYLOAD)\resources\**"
+             Directory="INSTALLDIR"
+             Subdirectory="resources" />
+      <Files Include="$(env.BROW_PAYLOAD)\*.dll"
+             Directory="INSTALLDIR" />
     </Feature>
 
     <Icon Id="browProduct.ico" SourceFile="$(env.BROW_ICON)" />
