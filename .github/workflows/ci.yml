@@ -224,9 +224,15 @@ jobs:
           grep -r "network_dns_over_https_enabled\|network_http3_enabled" components/config/prefs.rs > /dev/null && echo "phase 2 network prefs registered"
 
       - name: Package artifact
+        # The binary lands in target/release; resources stay at the repo
+        # root (mach does not copy them into target/). Bundle both as
+        # top-level members: servoshell + resources/.
         run: |
-          cd servo/target/release
-          tar -czf "$RUNNER_TEMP/brow-servo-linux-x86_64.tar.gz" servoshell resources
+          cd servo
+          cp target/release/servoshell "$RUNNER_TEMP/"
+          tar -czf "$RUNNER_TEMP/brow-servo-linux-x86_64.tar.gz" \
+            -C "$RUNNER_TEMP" servoshell \
+            -C "$GITHUB_WORKSPACE/servo" resources
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
