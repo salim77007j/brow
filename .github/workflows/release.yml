@@ -81,6 +81,15 @@ jobs:
             gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
             libasound2-dev libdbus-1-dev libudev-dev
 
+      # mach's bootstrap (servo/mach line ~29) execs `uv run --frozen python`;
+      # without uv on PATH the build dies with exit 127 before rustc ever runs.
+      # Mirrors the validated install path in ci.yml.
+      - name: Install uv (required by mach's Python environment management)
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          uv --version
+
       - name: Build brow-shell (production-stripped, locked)
         working-directory: servo
         run: ./mach build --locked --profile production-stripped
@@ -222,6 +231,14 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      # mach.ps1 execs `uv run --frozen python` (servo/mach.ps1:32); without uv
+      # on PATH every mach invocation dies before bootstrap. setup-uv places the
+      # binary on PATH for all subsequent steps.
+      - name: Install uv (required by mach's Python environment management)
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: false
 
       - name: Fetch + bootstrap gstreamer
         working-directory: servo
