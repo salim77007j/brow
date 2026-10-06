@@ -106,7 +106,8 @@ bench (semaphore, configurable).
 
 1. **`ci.yml` / `Check brow-shell`** — runner missing `libfreetype-dev`
    (`freetype-sys` pkg-config failure). Apt line extended (freetype,
-   fontconfig, expat).
+   fontconfig, expat — plus `llvm`/`clang`/`libclang-dev`/`autoconf2.13`
+   for the SpiderMonkey source build found in the same job).
 2. **`ci.yml` / `Test brow-privacy`** — criterion flags (`--warm-up-time`)
    were passed to the libtest harness unittests binary (`Unrecognized
    option`). Bench step now targets `--bench match_bench` explicitly.
@@ -122,6 +123,21 @@ bench (semaphore, configurable).
 6. **brow-phase6** — three `RefCell` double-borrow panics in the sink
    (assignment-order evaluation: `borrow_mut()` on the LHS before `borrow()`
    on the RHS) — caught by the hermetic tests before any live run.
+7. **`servo-script` E0004** — Phase 4 added `NetworkError::
+   BlockedByPrivacyFilter` but missed the exhaustive match rendering the
+   NetError page; blocked navigations now render a dedicated
+   privacy-engine explanation (visible, auditable blocking).
+8. **`brow-shell` engine path: 45 compile errors** — the biggest finding of
+   the phase: the engine-feature code never compiled (hidden since Phase 3
+   by the corrupted CI push trigger). All fixed against the vendored
+   servo/slint sources, including **implementing the never-written
+   `BrowState::apply_tab_events`** (+ `ensure_webview`/`destroy_webview`)
+   per the Phase 3 D4 lifecycle table — create/show/hide/throttle/destroy/
+   restore with URL + zoom + scroll replay. `cargo check -p brow-shell` is
+   now green on CI with the full engine embed.
+9. **Engine smoke tests** — the workspace binary is `servoshell`, not
+   `servo`; a full `mach build --release` has **succeeded on CI** since
+   these fixes, and smoke/artifact steps reference the right binary.
 
 ## 5. Deviations & honest accounting
 
