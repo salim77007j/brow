@@ -12,12 +12,21 @@
 param(
   [Parameter(Mandatory = $true)][string]$PayloadDir,
   [Parameter(Mandatory = $true)][string]$Version,
-  [Parameter(Mandatory = $false)][string]$IconFile = (Join-Path $PSScriptRoot "..\icons\brow.ico"),
-  [Parameter(Mandatory = $false)][string]$Wxs = (Join-Path $PSScriptRoot "brow.wxs"),
-  [Parameter(Mandatory = $false)][string]$OutDir = (Join-Path $PSScriptRoot "dist")
+  # NOTE: defaults are resolved lazily in the body below. Windows PowerShell
+  # 5.1 ("powershell -File", which is how the release workflow invokes this)
+  # evaluates parameter defaults BEFORE $PSScriptRoot is populated, so any
+  # default like (Join-Path $PSScriptRoot ...) fails with "Cannot bind
+  # argument to parameter 'Path' because it is an empty string".
+  [Parameter(Mandatory = $false)][string]$IconFile = "",
+  [Parameter(Mandatory = $false)][string]$Wxs = "",
+  [Parameter(Mandatory = $false)][string]$OutDir = ""
 )
 
 $ErrorActionPreference = "Stop"
+
+if (-not $IconFile) { $IconFile = Join-Path $PSScriptRoot "..\icons\brow.ico" }
+if (-not $Wxs)      { $Wxs      = Join-Path $PSScriptRoot "brow.wxs" }
+if (-not $OutDir)   { $OutDir   = Join-Path $PSScriptRoot "dist" }
 
 if (-not (Test-Path (Join-Path $PayloadDir "brow.exe"))) {
   throw "payload missing brow.exe: $PayloadDir"

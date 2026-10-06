@@ -15,10 +15,14 @@
 param(
   [Parameter(Mandatory = $true)][string]$PayloadDir,
   [Parameter(Mandatory = $true)][string]$Version,
-  [Parameter(Mandatory = $false)][string]$OutDir = (Join-Path $PSScriptRoot "dist")
+  # Lazily resolved in the body: powershell.exe 5.1 (-File) evaluates param
+  # defaults before $PSScriptRoot exists.
+  [Parameter(Mandatory = $false)][string]$OutDir = ""
 )
 
 $ErrorActionPreference = "Stop"
+
+if (-not $OutDir) { $OutDir = Join-Path $PSScriptRoot "dist" }
 
 if (-not (Test-Path (Join-Path $PayloadDir "brow.exe"))) {
   throw "payload missing brow.exe: $PayloadDir"
