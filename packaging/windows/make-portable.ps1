@@ -9,7 +9,8 @@
 #   powershell -File make-portable.ps1 -PayloadDir C:\staging\brow `
 #     -Version 0.5.0 -OutDir C:\staging\dist
 #
-# Payload contract: <PayloadDir>\brow.exe (PE 64-bit) and <PayloadDir>\resources\.
+# Payload contract: <PayloadDir>\brow.exe (PE 64-bit), <PayloadDir>\resources\,
+# and the runtime DLLs (ANGLE/GStreamer/MSVC) staged next to brow.exe.
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)][string]$PayloadDir,
@@ -36,6 +37,16 @@ try {
 
   Copy-Item (Join-Path $PayloadDir "brow.exe") $inner
   Copy-Item (Join-Path $PayloadDir "resources") $inner -Recurse
+
+  # Runtime DLLs staged next to brow.exe by the release workflow (ANGLE,
+  # GStreamer libs + plugin subset, MSVC CRT). Without them brow.exe cannot
+  # start on machines without GStreamer installed. DLLs are part of the
+  # payload contract for Windows; fail loudly if staging forgot them.
+  $dlls = Get-ChildItem (Join-Path $PayloadDir "*.dll") -ErrorAction SilentlyContinue
+  if (-not $dlls -or $dlls.Count -eq 0) {
+    throw "payload missing runtime DLLs (ANGLE/GStreamer/MSVC): $PayloadDir"
+  }
+  Copy-Item $dlls.FullName $inner
 
   $iconSrc = Join-Path $repoRoot "packaging\icons\brow.ico"
   if (Test-Path $iconSrc) { Copy-Item $iconSrc $inner }

@@ -5,7 +5,8 @@
          BROW_ICON=C:\staging\icons\brow.ico \
          wix build -arch x64 -d BrowVersion=0.5.0 \
            -out brow-0.5.0-x64.msi packaging/windows/brow.wxs
-       The payload directory must contain brow.exe and a resources\ tree
+       The payload directory must contain brow.exe, a resources\ tree and
+       the runtime DLLs (ANGLE/GStreamer/MSVC) staged next to brow.exe
        (identical contract to the Linux packages). Payload/icon paths come
        from environment variables so the same .wxs works locally and in CI:
          BROW_PAYLOAD  staging dir with brow.exe + resources\
@@ -48,6 +49,15 @@
             <Files Include="$(env.BROW_PAYLOAD)\resources\**" />
           </Component>
         </Directory>
+        <Component Id="BrowRuntimeDlls"
+                   Guid="D4E5F6A7-B8C9-4D0E-9F1A-3B4C5D6E7F8A"
+                   Bitness="always64">
+          <!-- Runtime DLLs (ANGLE, GStreamer libs + plugin subset, MSVC CRT)
+               staged next to brow.exe in the payload. Without them the
+               installed brow.exe cannot start on machines without GStreamer
+               installed. -->
+          <Files Include="$(env.BROW_PAYLOAD)\*.dll" />
+        </Component>
       </Directory>
     </StandardDirectory>
 
@@ -74,6 +84,7 @@
     <Feature Id="Complete" Level="1">
       <ComponentRef Id="BrowExe" />
       <ComponentRef Id="BrowResources" />
+      <ComponentRef Id="BrowRuntimeDlls" />
       <ComponentRef Id="BrowShortcut" />
     </Feature>
 

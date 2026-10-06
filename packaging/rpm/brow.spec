@@ -50,7 +50,7 @@ partitioned cookies, HTTP/3 + QUIC and DNS-over-HTTPS. No telemetry, ever.
 # provenance; local builds reference %{brow_payload} directly.
 
 %build
-# The engine is built out-of-band (cargo build --release -p brow-shell).
+# The engine is built out-of-band (mach build; binary name: servoshell).
 
 %install
 install -D -m 0755 "%{brow_payload}/brow"        %{buildroot}/usr/lib/brow/brow

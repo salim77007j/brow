@@ -67,20 +67,6 @@ jobs:
         working-directory: servo
         run: rustup show
 
-      - name: Install build dependencies (mirrors servo's Linux buildbook)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential cmake gperf ninja-build pkg-config python3 \
-            libx11-dev libx11-xcb-dev libxcb1-dev libxcb-render0-dev \
-            libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev \
-            libxkbcommon-x11-dev libwayland-dev wayland-protocols \
-            libegl1-mesa-dev libgl1-mesa-dev \
-            libfontconfig1-dev libfreetype6-dev \
-            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-            gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
-            libasound2-dev libdbus-1-dev libudev-dev
-
       # mach's bootstrap (servo/mach line ~29) execs `uv run --frozen python`;
       # without uv on PATH the build dies with exit 127 before rustc ever runs.
       # Mirrors the validated install path in ci.yml.
@@ -90,14 +76,29 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           uv --version
 
+      # mach bootstrap installs the authoritative package set from
+      # servo/python/servo/platform/linux_packages/apt/apt_common.txt —
+      # including libgstreamer-plugins-bad1.0-dev (gstreamer-webrtc-1.0.pc),
+      # which a hand-rolled list previously missed and the build died on
+      # (pkg-config exit 1, gstreamer-webrtc-sys build script failure).
+      # Mirrors the green ci.yml path exactly.
+      - name: Install build dependencies (mach bootstrap — mirrors ci.yml)
+        run: |
+          sudo apt-get update
+          cd servo
+          ./mach bootstrap
+
       - name: Build brow-shell (production-stripped, locked)
         working-directory: servo
         run: ./mach build --locked --profile production-stripped
 
       - name: Stage payload
+        # mach build honors default-members = ["ports/servoshell"], so the
+        # produced binary is `servoshell` (not brow-shell). On Linux the
+        # GStreamer/ANGLE libraries are system packages — nothing to bundle.
         run: |
           mkdir -p packaging/payload packaging/dist
-          cp servo/target/production-stripped/brow-shell packaging/payload/brow
+          cp servo/target/production-stripped/servoshell packaging/payload/brow
           strip packaging/payload/brow
           cp -R servo/resources packaging/payload/resources
 
@@ -253,10 +254,17 @@ jobs:
         run: .\mach build --locked --profile production-stripped
 
       - name: Stage payload
+        # mach build honors default-members = ["ports/servoshell"], so the
+        # produced binary is servoshell.exe (not brow-shell.exe) — the v0.6.0
+        # run #2 failed here on exactly that mismatch. mach post-build also
+        # copies the curated runtime DLL set (ANGLE, GStreamer libs + plugin
+        # subset, MSVC CRT) into the target dir; bundle them too or brow.exe
+        # cannot start on machines without GStreamer installed.
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path packaging\payload, packaging\dist | Out-Null
-          Copy-Item servo\target\production-stripped\brow-shell.exe packaging\payload\brow.exe
+          Copy-Item servo\target\production-stripped\servoshell.exe packaging\payload\brow.exe
+          Copy-Item servo\target\production-stripped\*.dll packaging\payload
           Copy-Item servo\resources packaging\payload\resources -Recurse
 
       - name: Portable zip
