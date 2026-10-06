@@ -1,28 +1,22 @@
 /* WebViewDelegate implementation: forwards engine events into the chrome
  * state (brow-shell-core) and the Slint UI. */
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
-use servo::{LoadStatus, ServoUrl, WebView, WebViewDelegate};
+use servo::{LoadStatus, WebView, WebViewDelegate};
 use url::Url;
 
 use crate::state::BrowState;
 
 pub struct BrowWebViewDelegate(pub Rc<RefCell<BrowState>>);
 
-use std::cell::RefCell;
-
-fn to_url(servo_url: &ServoUrl) -> Url {
-    Url::parse(servo_url.as_str()).unwrap_or_else(|_| Url::parse("about:blank").unwrap())
-}
-
 impl WebViewDelegate for BrowWebViewDelegate {
-    fn notify_url_changed(&self, webview: WebView, url: ServoUrl) {
+    fn notify_url_changed(&self, webview: WebView, url: Url) {
         let mut state = self.0.borrow_mut();
         let Some(tab_id) = state.webview_to_tab.get(&webview.id()).copied() else {
             return;
         };
-        let url = to_url(&url);
         let _ = state.tabs.record_navigation(tab_id, url);
         state.sync_chrome();
     }
@@ -44,14 +38,19 @@ impl WebViewDelegate for BrowWebViewDelegate {
         };
 
         if !loading {
-            // Record a history visit when a page finishes loading.
-            if let Ok(tab) = state.tabs.tab(tab_id) {
+            // Record a history visit when a page finishes loading. Copy the
+            // needed fields out first: `tabs.tab()` borrows state immutably
+            // while `history.record_visit_now` needs the mutable borrow.
+            let visit = state.tabs.tab(tab_id).ok().map(|tab| {
                 let title = if tab.title.is_empty() {
                     tab.url.host_str().unwrap_or("").to_string()
                 } else {
                     tab.title.clone()
                 };
-                state.history.record_visit_now(tab.url.as_str(), &title);
+                (tab.url.to_string(), title)
+            });
+            if let Some((url, title)) = visit {
+                state.history.record_visit_now(&url, &title);
             }
         }
         state.tab_loading.insert(tab_id.0, loading);

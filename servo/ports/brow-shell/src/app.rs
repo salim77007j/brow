@@ -8,15 +8,17 @@
  * lives on the main thread. Engine threads wake us via the BrowWaker. */
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use slint::platform::{Key as SlintKey, PointerEventButton, WindowEvent as SlintWindowEvent};
+use slint::platform::{
+    Key as SlintKey, PointerEventButton, WindowAdapter, WindowEvent as SlintWindowEvent,
+};
 use slint::{LogicalPosition, SharedString};
 use servo::{
-    InputEvent, MouseButton, MouseButtonAction, MouseButtonEvent, MouseMoveEvent,
-    RenderingContext, WebView, WebViewBuilder, WheelDelta, WheelEvent, WheelMode,
+    InputEvent, MouseButton, MouseButtonAction, MouseButtonEvent, MouseLeftViewportEvent,
+    MouseMoveEvent, RenderingContext, Scroll, WebView, WebViewBuilder, WebViewPoint,
+    WebViewVector, WheelDelta, WheelEvent, WheelMode,
 };
 use url::Url;
 use webrender_api::units::DevicePoint;
@@ -24,10 +26,12 @@ use winit::event::WindowEvent as WinitWindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::window::{Window, WindowId};
 
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+
 use brow_shell_core::{TabEvent, TabId, normalize_url};
 
-use crate::chrome;
 use crate::delegate::BrowWebViewDelegate;
+use crate::platform::ChromeSurface;
 use crate::state::{
     Action, BrowEvent, BrowState, ContentWindow, SharedState, SLEEP_PASS_INTERVAL,
     RESOURCE_SAMPLE_INTERVAL,
@@ -194,7 +198,7 @@ impl winit::application::ApplicationHandler<BrowEvent> for BrowApp {
 
         // Create the content window for the activated tab + first render.
         pump(self.state.clone(), active, &self.delegate);
-        render_chrome(&self.state.borrow());
+        render_chrome(&self.state);
     }
 
     fn user_event(&mut self, active: &ActiveEventLoop, event: BrowEvent) {
@@ -202,7 +206,7 @@ impl winit::application::ApplicationHandler<BrowEvent> for BrowApp {
             self.state.borrow().sync_chrome();
         }
         pump(self.state.clone(), active, &self.delegate);
-        render_chrome(&self.state.borrow());
+        render_chrome(&self.state);
     }
 
     fn window_event(
@@ -236,12 +240,12 @@ impl winit::application::ApplicationHandler<BrowEvent> for BrowApp {
         }
 
         pump(self.state.clone(), active, &self.delegate);
-        render_chrome(&self.state.borrow());
+        render_chrome(&self.state);
     }
 
     fn about_to_wait(&mut self, active: &ActiveEventLoop) {
         pump(self.state.clone(), active, &self.delegate);
-        render_chrome(&self.state.borrow());
+        render_chrome(&self.state);
 
         // Idle policy: sleep the loop until the next Slint timer, resource
         // sample, or sleep pass — the shell itself contributes near-zero idle
@@ -312,7 +316,7 @@ fn pump(
     if do_sample {
         let events = {
             let mut state = state.borrow_mut();
-            let rss = brow_shell_core::current_process_rss_bytes().unwrap_or(0);
+            let rss = brow_shell_core::memwatch::current_process_rss_bytes().unwrap_or(0);
             let _pressure = state.memwatch.sample(Some(rss));
             state.tabs.handle_memory_sample(rss, now)
         };
@@ -467,7 +471,7 @@ fn execute_action(
                     state.l10n = brow_shell_core::L10n::new(next);
                 }
                 "search_engine" => {
-                    use brow_shell_core::SearchEngine;
+                    use brow_shell_core::settings::SearchEngine;
                     let next = match state.settings.search_engine {
                         SearchEngine::Google => SearchEngine::DuckDuckGo,
                         SearchEngine::DuckDuckGo => SearchEngine::Bing,
@@ -518,11 +522,13 @@ fn route_chrome_event(state: &SharedState, event: &WinitWindowEvent) {
     match event {
         WinitWindowEvent::Resized(size) => {
             surface.resize(size.width.max(1), size.height.max(1));
-            slint_window
-                .window()
-                .dispatch_event(SlintWindowEvent::Resized {
-                    size: slint::PhysicalSize::new(size.width.max(1), size.height.max(1)),
-                });
+            // Slint expects the logical size (physical / scale factor).
+            slint_window.window().dispatch_event(SlintWindowEvent::Resized {
+                size: slint::LogicalSize::new(
+                    (size.width.max(1)) as f32 / scale as f32,
+                    (size.height.max(1)) as f32 / scale as f32,
+                ),
+            });
         }
         WinitWindowEvent::ScaleFactorChanged { scale_factor, .. } => {
             slint_window
@@ -608,9 +614,7 @@ fn route_chrome_event(state: &SharedState, event: &WinitWindowEvent) {
         WinitWindowEvent::Focused(focused) => {
             slint_window
                 .window()
-                .dispatch_event(SlintWindowEvent::WindowActivationChanged {
-                    active: *focused,
-                });
+                .dispatch_event(SlintWindowEvent::WindowActiveChanged(*focused));
         }
         _ => {}
     }
@@ -618,27 +622,31 @@ fn route_chrome_event(state: &SharedState, event: &WinitWindowEvent) {
 
 fn slint_named_key_text(named: &winit::keyboard::NamedKey) -> Option<String> {
     use winit::keyboard::NamedKey as N;
-    let key = match named {
-        N::Enter => SlintKey::Return,
-        N::Backspace => SlintKey::Backspace,
-        N::Tab => SlintKey::Tab,
-        N::Escape => SlintKey::Escape,
-        N::Delete => SlintKey::Delete,
-        N::ArrowUp => SlintKey::UpArrow,
-        N::ArrowDown => SlintKey::DownArrow,
-        N::ArrowLeft => SlintKey::LeftArrow,
-        N::ArrowRight => SlintKey::RightArrow,
-        N::Home => SlintKey::Home,
-        N::End => SlintKey::End,
-        N::PageUp => SlintKey::PageUp,
-        N::PageDown => SlintKey::PageDown,
-        N::Shift => SlintKey::Shift,
-        N::Control => SlintKey::Control,
-        N::Super => SlintKey::Meta,
-        N::Alt => SlintKey::Alt,
+    // Slint dispatches special keys as single-char strings using the Qt/DOM
+    // key codes tabulated in i-slint-common's for_each_keys (arrows in the
+    // F7xx private-use area). Matching those exact codepoints keeps the
+    // dispatched events identical to what Slint's own winit backend emits.
+    let ch = match named {
+        N::Enter => '\u{000a}',
+        N::Backspace => '\u{0008}',
+        N::Tab => '\u{0009}',
+        N::Escape => '\u{001b}',
+        N::Delete => '\u{007f}',
+        N::ArrowUp => '\u{F700}',
+        N::ArrowDown => '\u{F701}',
+        N::ArrowLeft => '\u{F702}',
+        N::ArrowRight => '\u{F703}',
+        N::Home => '\u{F729}',
+        N::End => '\u{F72B}',
+        N::PageUp => '\u{F72C}',
+        N::PageDown => '\u{F72D}',
+        N::Shift => '\u{0010}',
+        N::Control => '\u{0011}',
+        N::Super => '\u{0017}',
+        N::Alt => '\u{0012}',
         _ => return None,
     };
-    Some(key.into())
+    Some(ch.to_string())
 }
 
 // ---- content window event routing ------------------------------------------
@@ -690,13 +698,15 @@ fn route_content_event(
             content
                 .webview
                 .notify_input_event(InputEvent::MouseMove(MouseMoveEvent::new(
-                    DevicePoint::new(position.x as f32, position.y as f32),
+                    WebViewPoint::Device(DevicePoint::new(position.x as f32, position.y as f32)),
                 )));
         }
         WinitWindowEvent::CursorLeft { .. } => {
             content
                 .webview
-                .notify_input_event(InputEvent::MouseLeftViewport);
+                .notify_input_event(InputEvent::MouseLeftViewport(MouseLeftViewportEvent {
+                    focus_moving_to_another_iframe: false,
+                }));
         }
         WinitWindowEvent::MouseInput {
             state: mstate,
@@ -705,28 +715,29 @@ fn route_content_event(
         } => {
             let (action, button) = match (mstate, button) {
                 (winit::event::ElementState::Pressed, winit::event::MouseButton::Left) => {
-                    (MouseButtonAction::Press, MouseButton::Primary)
+                    (MouseButtonAction::Down, MouseButton::Primary)
                 }
                 (winit::event::ElementState::Released, winit::event::MouseButton::Left) => {
-                    (MouseButtonAction::Release, MouseButton::Primary)
+                    (MouseButtonAction::Up, MouseButton::Primary)
                 }
                 (winit::event::ElementState::Pressed, winit::event::MouseButton::Right) => {
-                    (MouseButtonAction::Press, MouseButton::Secondary)
+                    (MouseButtonAction::Down, MouseButton::Secondary)
                 }
                 (winit::event::ElementState::Released, winit::event::MouseButton::Right) => {
-                    (MouseButtonAction::Release, MouseButton::Secondary)
+                    (MouseButtonAction::Up, MouseButton::Secondary)
                 }
+                // DOM button 1 ("middle") maps to Auxiliary in servo's enum.
                 (winit::event::ElementState::Pressed, winit::event::MouseButton::Middle) => {
-                    (MouseButtonAction::Press, MouseButton::Middle)
+                    (MouseButtonAction::Down, MouseButton::Auxiliary)
                 }
                 (winit::event::ElementState::Released, winit::event::MouseButton::Middle) => {
-                    (MouseButtonAction::Release, MouseButton::Middle)
+                    (MouseButtonAction::Up, MouseButton::Auxiliary)
                 }
                 (winit::event::ElementState::Pressed, _) => {
-                    (MouseButtonAction::Press, MouseButton::Primary)
+                    (MouseButtonAction::Down, MouseButton::Primary)
                 }
                 (winit::event::ElementState::Released, _) => {
-                    (MouseButtonAction::Release, MouseButton::Primary)
+                    (MouseButtonAction::Up, MouseButton::Primary)
                 }
             };
             let (x, y) = content.last_cursor.get();
@@ -735,7 +746,7 @@ fn route_content_event(
                 .notify_input_event(InputEvent::MouseButton(MouseButtonEvent::new(
                     action,
                     button,
-                    DevicePoint::new(x as f32, y as f32),
+                    WebViewPoint::Device(DevicePoint::new(x as f32, y as f32)),
                 )));
         }
         WinitWindowEvent::MouseWheel { delta, .. } => {
@@ -757,16 +768,168 @@ fn route_content_event(
                         z: 0.0,
                         mode,
                     },
-                    DevicePoint::new(cx as f32, cy as f32),
+                    WebViewPoint::Device(DevicePoint::new(cx as f32, cy as f32)),
                 )));
         }
         WinitWindowEvent::KeyboardInput { event, .. } => {
             let kb = crate::keymap::keyboard_event_from_winit(&event, Default::default());
             content
                 .webview
-                .notify_input_event(InputEvent::Keyboard(kb));
+                .notify_input_event(InputEvent::Keyboard(servo::KeyboardEvent::new(kb)));
         }
         _ => {}
+    }
+}
+
+// ---- tab lifecycle -> engine primitives (phase 3 decision D4) --------------
+
+#[cfg(feature = "engine")]
+impl BrowState {
+    /// Apply brow-shell-core tab lifecycle events to engine primitives:
+    ///
+    /// | event        | engine primitive                                       |
+    /// |--------------|--------------------------------------------------------|
+    /// | Created      | create the WebView (one winit window + context/tab)    |
+    /// | Activated    | show + unthrottle (+ create/restore if missing)        |
+    /// | Backgrounded | hide + `set_throttled(true)` (timers clamp to 1 s)     |
+    /// | Slept        | same as backgrounded (already backgrounded)            |
+    /// | Woken        | show + unthrottle                                      |
+    /// | Discarded    | destroy the WebView (core keeps the ~2 KiB payload)    |
+    /// | Restored     | recreate from the payload (URL + zoom + scroll replay) |
+    /// | Closed       | destroy the WebView                                     |
+    pub fn apply_tab_events(
+        &mut self,
+        events: Vec<TabEvent>,
+        active: &ActiveEventLoop,
+        delegate: &Rc<BrowWebViewDelegate>,
+    ) {
+        for event in events {
+            match event {
+                TabEvent::Created(id) => {
+                    if let Ok(tab) = self.tabs.tab(id) {
+                        self.ensure_webview(id, tab.url.clone(), active, delegate);
+                    }
+                }
+                TabEvent::Activated(id) => {
+                    // First activation of a tab without a WebView (covers
+                    // session-restored tabs and tabs created while dormant).
+                    if !self.content.contains_key(&id) {
+                        if let Ok(tab) = self.tabs.tab(id) {
+                            self.ensure_webview(id, tab.url.clone(), active, delegate);
+                        }
+                    }
+                    if let Some(content) = self.content.get(&id) {
+                        content.window.set_visible(true);
+                        content.window.focus_window();
+                        content.webview.show();
+                        content.webview.set_throttled(false);
+                        content.webview.focus();
+                    }
+                }
+                TabEvent::Backgrounded(id) | TabEvent::Slept(id) => {
+                    if let Some(content) = self.content.get(&id) {
+                        content.window.set_visible(false);
+                        content.webview.hide();
+                        content.webview.set_throttled(true);
+                    }
+                }
+                TabEvent::Woken(id) => {
+                    if let Some(content) = self.content.get(&id) {
+                        content.window.set_visible(true);
+                        content.webview.show();
+                        content.webview.set_throttled(false);
+                    }
+                }
+                TabEvent::Discarded(id, _payload) => self.destroy_webview(id),
+                TabEvent::Closed(id) => self.destroy_webview(id),
+                TabEvent::Restored(id, url, scroll_y, zoom) => {
+                    self.ensure_webview(id, url.clone(), active, delegate);
+                    if let Some(content) = self.content.get(&id) {
+                        content.webview.set_page_zoom(zoom);
+                        if scroll_y > 0.0 {
+                            // Approximate replay: one synthetic scroll delta in
+                            // device pixels (the engine clamps to the document
+                            // extent). Exact-offset restore needs the engine's
+                            // session-restore path.
+                            let scale = content.webview.device_pixels_per_css_pixel();
+                            let dy = (scroll_y * scale.get()) as f32;
+                            content.webview.notify_scroll_event(
+                                Scroll::Delta(WebViewVector::Device(
+                                    servo::DeviceVector2D::new(0.0, dy),
+                                )),
+                                WebViewPoint::Device(DevicePoint::new(0.0, 0.0)),
+                            );
+                        }
+                    }
+                }
+            }
+            self.sync_chrome();
+        }
+    }
+
+    /// Create the engine side of one tab (idempotent): a winit window, a
+    /// surfman/GL rendering context and a Servo WebView bound to the shared
+    /// delegate. The tab keeps its URL from brow-shell-core.
+    fn ensure_webview(
+        &mut self,
+        id: TabId,
+        url: Url,
+        active: &ActiveEventLoop,
+        delegate: &Rc<BrowWebViewDelegate>,
+    ) {
+        if self.content.contains_key(&id) {
+            return;
+        }
+        let Some(servo) = self.servo.as_ref() else {
+            return;
+        };
+        let window = active
+            .create_window(
+                Window::default_attributes()
+                    .with_title("brow")
+                    .with_inner_size(winit::dpi::PhysicalSize::new(
+                        DEFAULT_WIDTH as u32,
+                        DEFAULT_CONTENT_HEIGHT as u32,
+                    )),
+            )
+            .expect("content window");
+        let display_handle = active.display_handle().expect("display handle");
+        let window_handle = window.window_handle().expect("window handle");
+        let rendering_context = Rc::new(
+            servo::WindowRenderingContext::new(
+                display_handle,
+                window_handle,
+                window.inner_size(),
+            )
+            .expect("content rendering context"),
+        );
+        let webview = WebViewBuilder::new(servo, rendering_context.clone())
+            .delegate(delegate.clone())
+            .url(url)
+            .build();
+        webview.resize(window.inner_size());
+        let webview_id = webview.id();
+        self.webview_to_tab.insert(webview_id, id);
+        self.content.insert(
+            id,
+            ContentWindow {
+                window,
+                rendering_context,
+                webview,
+                last_cursor: Cell::new((0.0, 0.0)),
+            },
+        );
+    }
+
+    /// Drop the engine side of one tab. Dropping the `ContentWindow` destroys
+    /// the winit window and releases the compositor buffers; brow-shell-core
+    /// retains the small payload for a later restore.
+    fn destroy_webview(&mut self, id: TabId) {
+        if let Some(content) = self.content.remove(&id) {
+            let webview_id = content.webview.id();
+            self.webview_to_tab.remove(&webview_id);
+        }
+        let _ = self.tab_loading.remove(&id.0);
     }
 }
 
