@@ -23,6 +23,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use hickory_proto::rr::RecordType;
 use parking_lot::Mutex;
 
 use crate::error::BrowNetError;
@@ -132,6 +133,48 @@ impl DohResolver {
     /// Is DoH actually going to be attempted?
     pub fn doh_enabled(&self) -> bool {
         self.inner.config.mode != DnsMode::SystemOnly && !self.inner.config.templates.is_empty()
+    }
+
+    /// Resolve the CNAME chain for `host` (brow phase 4: CNAME-cloaking
+    /// detection). Returns `[host, ..aliases.., canonical]`; a single-entry
+    /// chain means "no CNAME". Uses a dedicated CNAME-type query; failures
+    /// propagate so callers can degrade gracefully.
+    pub async fn resolve_cname_chain(&self, host: &str) -> Result<Vec<String>, BrowNetError> {
+        if host.parse::<IpAddr>().is_ok() {
+            return Ok(vec![host.to_ascii_lowercase()]);
+        }
+        if !self.doh_enabled() {
+            return Err(BrowNetError::Doh("DoH disabled or no templates configured".into()));
+        }
+        let transport = self
+            .inner
+            .transport
+            .get_or_try_init(|| async { doh::DohTransport::new(&self.inner.config) })
+            .await?;
+        let bootstrap = self
+            .inner
+            .config
+            .bootstrap
+            .first()
+            .copied()
+            .ok_or_else(|| BrowNetError::Doh("no bootstrap addresses configured".into()))?;
+        let templates = &self.inner.config.templates;
+        let mut last_error = None;
+        for i in 0..templates.len() {
+            let template = &templates[i % templates.len()];
+            let wire_query = wire::build_query_for(host, RecordType::CNAME)?;
+            match transport
+                .exchange(template, bootstrap, wire_query, self.inner.config.timeout)
+                .await
+            {
+                Ok(bytes) => match wire::parse_cname_chain(&bytes, host) {
+                    Ok(chain) => return Ok(chain),
+                    Err(err) => last_error = Some(err),
+                },
+                Err(err) => last_error = Some(err),
+            }
+        }
+        Err(last_error.unwrap_or_else(|| BrowNetError::Doh("no templates".into())))
     }
 
     /// Resolve `host` to addresses. IP literals short-circuit (no cache pollution).

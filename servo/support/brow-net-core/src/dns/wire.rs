@@ -91,6 +91,65 @@ pub fn parse_response(bytes: &[u8], host: &str) -> Result<super::ResolvedAddrs, 
     })
 }
 
+/// Parse a DNS response and extract the CNAME chain for `host`.
+///
+/// Returns the full chain: `[host, ..intermediate aliases.., canonical]`
+/// (lowercased, trailing dots stripped). When the answer carries no CNAME
+/// records the chain is simply `[host]`. Walks owner→target links instead
+/// of trusting answer order, and guards against loops.
+pub fn parse_cname_chain(bytes: &[u8], host: &str) -> Result<Vec<String>, BrowNetError> {
+    let message = Message::from_vec(bytes)
+        .map_err(|e| BrowNetError::Doh(format!("malformed DNS response: {e}")))?;
+
+    if message.metadata.response_code != ResponseCode::NoError {
+        return Err(BrowNetError::Doh(format!(
+            "DNS response code: {:?}",
+            message.metadata.response_code
+        )));
+    }
+
+    // Question-section validation, identical to `parse_response`.
+    let expected = Name::from_utf8(&format!("{host}."))
+        .ok()
+        .map(|n| n.to_lowercase());
+    if let (Some(expected), Some(query)) = (expected, message.queries.first()) {
+        if query.name().to_lowercase() != expected {
+            return Err(BrowNetError::Doh(format!(
+                "DNS response question mismatch: asked for {host}, got {}",
+                query.name()
+            )));
+        }
+    }
+
+    let mut links: Vec<(String, String)> = Vec::new();
+    for answer in &message.answers {
+        if let RData::CNAME(cname) = &answer.data {
+            // hickory 0.26 `Record` exposes `name` as a public field.
+            let owner = answer.name.to_lowercase().to_string();
+            let target = cname.0.to_lowercase().to_string();
+            links.push((strip_dot(&owner), strip_dot(&target)));
+        }
+    }
+
+    let start = host.to_ascii_lowercase();
+    let mut chain = vec![start.clone()];
+    while let Some(next) = links
+        .iter()
+        .find(|(owner, _)| *owner == *chain.last().expect("chain never empty"))
+        .map(|(_, target)| target.clone())
+    {
+        if chain.contains(&next) || chain.len() > 16 {
+            break; // loop / hostile chain guard
+        }
+        chain.push(next);
+    }
+    Ok(chain)
+}
+
+fn strip_dot(name: &str) -> String {
+    name.strip_suffix('.').unwrap_or(name).to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,5 +224,52 @@ mod tests {
         response.metadata.response_code = ResponseCode::NXDomain;
         let response_bytes = response.to_vec().unwrap();
         assert!(parse_response(&response_bytes, "example.test").is_err());
+    }
+
+    #[test]
+    fn parses_cname_chain_roundtrip() {
+        use hickory_proto::rr::rdata::name::CNAME;
+        let query_bytes = build_query_for("metrics.news.test", RecordType::CNAME).unwrap();
+        let query = Message::from_vec(&query_bytes).unwrap();
+
+        let mut response = Message::response(query.metadata.id, OpCode::Query);
+        for q in &query.queries {
+            response.add_query(q.clone());
+        }
+        // two-hop chain: metrics.news.test -> edge1.track.test -> collector.track.test
+        response.add_answer(Record::from_rdata(
+            Name::from_utf8("metrics.news.test").unwrap(),
+            300,
+            RData::CNAME(CNAME(Name::from_utf8("edge1.track.test").unwrap())),
+        ));
+        response.add_answer(Record::from_rdata(
+            Name::from_utf8("edge1.track.test").unwrap(),
+            300,
+            RData::CNAME(CNAME(Name::from_utf8("collector.track.test").unwrap())),
+        ));
+        let bytes = response.to_vec().unwrap();
+
+        let chain = parse_cname_chain(&bytes, "metrics.news.test").unwrap();
+        assert_eq!(
+            chain,
+            vec![
+                "metrics.news.test".to_string(),
+                "edge1.track.test".to_string(),
+                "collector.track.test".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn cname_chain_without_records_is_single_entry() {
+        let query_bytes = build_query_for("plain.test", RecordType::CNAME).unwrap();
+        let query = Message::from_vec(&query_bytes).unwrap();
+        let mut response = Message::response(query.metadata.id, OpCode::Query);
+        for q in &query.queries {
+            response.add_query(q.clone());
+        }
+        let bytes = response.to_vec().unwrap();
+        let chain = parse_cname_chain(&bytes, "plain.test").unwrap();
+        assert_eq!(chain, vec!["plain.test".to_string()]);
     }
 }
