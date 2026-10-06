@@ -198,9 +198,12 @@ jobs:
           ./mach build --release
 
       - name: Smoke test — binary runs
+        # The workspace's default member is ports/servoshell; its binary is
+        # named `servoshell` (see ports/servoshell/Cargo.toml [[bin]]).
         run: |
           cd servo
-          ./target/release/servo --version
+          ls target/release/ | head -20
+          ./target/release/servoshell --version
 
       - name: Smoke test — headless render of example.com
         run: |
@@ -212,7 +215,7 @@ jobs:
             export __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json
           fi
           timeout 120 xvfb-run -a -s "-screen 0 1280x800x24" \
-            ./target/release/servo -z -o "$RUNNER_TEMP/shot.png" https://example.com || true
+            ./target/release/servoshell -z -o "$RUNNER_TEMP/shot.png" https://example.com || true
           test -s "$RUNNER_TEMP/shot.png" && echo "headless render OK: $(stat -c%s "$RUNNER_TEMP/shot.png") bytes"
 
       - name: Smoke test — DoH and HTTP/3 prefs present
@@ -223,7 +226,7 @@ jobs:
       - name: Package artifact
         run: |
           cd servo/target/release
-          tar -czf "$RUNNER_TEMP/brow-servo-linux-x86_64.tar.gz" servo resources
+          tar -czf "$RUNNER_TEMP/brow-servo-linux-x86_64.tar.gz" servoshell resources
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
