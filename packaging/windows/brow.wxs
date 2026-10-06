@@ -1,6 +1,6 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <!-- brow MSI installer (Phase 5).
-       Built with the WiX 7 CLI on Windows runners:
+       Built with the WiX 6 CLI on Windows runners:
          BROW_PAYLOAD=C:\staging\brow \
          BROW_ICON=C:\staging\icons\brow.ico \
          wix build -arch x64 -d BrowVersion=0.5.0 \

@@ -9,7 +9,7 @@ A release tag `vX.Y.Z` (see `.github/workflows/release.yml`) produces:
 
 | Artifact | Platform | Producer | Contents |
 |---|---|---|---|
-| `brow-X.Y.Z-x64.msi` | Windows x86_64 | WiX 7 (`packaging/windows/brow.wxs`) | `brow.exe` + `resources\` into `%ProgramFiles%\brow`, Start-Menu shortcut, ARP icon |
+| `brow-X.Y.Z-x64.msi` | Windows x86_64 | WiX 6 (`packaging/windows/brow.wxs`) | `brow.exe` + `resources\` into `%ProgramFiles%\brow`, Start-Menu shortcut, ARP icon |
 | `brow-X.Y.Z-x86_64-windows-portable.zip` | Windows x86_64 | `packaging/windows/make-portable.ps1` | self-contained `brow\` folder (`brow.exe`, `resources\`, `brow.ico`, docs, `README.txt`) |
 | `brow-X.Y.Z-x86_64.AppImage` | Linux x86_64 | `packaging/linux/build-appimage.sh` (linuxdeploy) | AppDir with `usr/lib/brow/{brow,resources}`, custom AppRun, desktop entry, icon, ldd-bundled libs |
 | `brow_X.Y.Z_amd64.deb` | Debian/Ubuntu | **nfpm** (`packaging/nfpm.yaml`) | canonical Linux layout (below), curated runtime `Depends` |
@@ -55,7 +55,7 @@ git tag v0.5.0 && git push origin v0.5.0
         │    nfpm .deb + .rpm → layout cross-check → AppImage (+extract test)
         │
         ├─ windows-x86_64 (windows-2022)
-        │    LLVM 20.1 (LIBCLANG_PATH) → WiX 7 (winget) → mach bootstrap-gstreamer
+        │    LLVM 20.1 (LIBCLANG_PATH) → WiX 6 (winget) → mach bootstrap-gstreamer
         │    mach build --locked --profile production-stripped
         │    stage payload → portable zip → MSI
         │
@@ -133,7 +133,7 @@ bad/libav as recommends), ALSA, dbus, udev. RPM names follow Fedora's.
 
 ## 7. Known limitations
 
-* The MSI is compiled on Windows runners only (WiX 7 has no Linux-native
+* The MSI is compiled on Windows runners only (WiX 6 has no Linux-native
   story for this authoring model in our pipeline); the .wxs is XML-validated
   locally, the toolchain mirrors upstream servo's `windows.yml`.
 * AppImages bundle what `ldd` discovers for `brow` itself; GStreamer plugin

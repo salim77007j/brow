@@ -8,7 +8,7 @@ name: brow release
 # The workflow builds the production-stripped engine profile on both
 # platforms (LTO, codegen-units=1, opt-level="s", strip — the
 # "ultra-lightweight" profile), then produces:
-#   * Windows:  brow-<v>-x64.msi (WiX 7), portable zip
+#   * Windows:  brow-<v>-x64.msi (WiX 6), portable zip
 #   * Linux:    AppImage, .deb (nfpm + dpkg cross-check), .rpm (nfpm),
 #               portable tar.gz
 #   * SHA256SUMS over every artifact (platform-uniform manifest format)
@@ -219,14 +219,24 @@ jobs:
           Install-Module -Name Microsoft.WinGet.Client -Repository PSGallery -Force
           Repair-WinGetPackageManager -Latest -Force -AllUsers
 
-      - name: Install WiX 7 CLI
+      # WiX v6, NOT v7: WiX v7 gates every build behind OSMF EULA acceptance
+      # (error WIX7015) and requires a per-machine acceptance step. v6 uses
+      # the same v4 XML schema and CLI surface with no EULA gate.
+      - name: Install WiX 6 CLI
         shell: powershell
         run: |
-          winget install --silent --exact WiXToolset.WiXCLI --version 7.0.0.0 --accept-source-agreements
-          # The WiX installer sets the WIX7 environment variable to the install
-          # directory; expose it on PATH for subsequent steps.
-          $wixBin = [System.Environment]::GetEnvironmentVariable("WIX7", "Machine")
-          $wixBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          winget install --silent --exact WiXToolset.WiXCLI --version 6.0.2.0 --accept-source-agreements
+          # The WiX installer sets the WIX<MAJOR> environment variable to the
+          # install directory; expose it on PATH for subsequent steps.
+          $wixBin = [System.Environment]::GetEnvironmentVariable("WIX6", "Machine")
+          if (-not $wixBin) {
+            $wixBin = [System.Environment]::GetEnvironmentVariable("WIX7", "Machine")
+          }
+          if ($wixBin) {
+            $wixBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          } else {
+            Write-Host "no WIX6/WIX7 machine env var found; assuming winget put wix on PATH"
+          }
 
       - name: Setup Python (mach bootstrap)
         uses: actions/setup-python@v5

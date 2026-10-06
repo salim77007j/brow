@@ -1,8 +1,8 @@
 # brow — MSI installer builder (Phase 5)
 #
-# Compiles packaging/windows/brow.wxs with the WiX 7 CLI. The WiX CLI is
+# Compiles packaging/windows/brow.wxs with the WiX 6 CLI. The WiX CLI is
 # expected on PATH (GitHub runners: `winget install --silent --exact
-# WiXToolset.WiXCLI --version 7.0.0.0` — see .github/workflows/release.yml).
+# WiXToolset.WiXCLI --version 6.0.2.0` — see .github/workflows/release.yml).
 #
 # Usage:
 #   powershell -File build-msi.ps1 -PayloadDir C:\staging\brow `
@@ -36,7 +36,7 @@ if (-not (Test-Path (Join-Path $PayloadDir "resources"))) {
 }
 $wixCmd = Get-Command wix -ErrorAction SilentlyContinue
 if (-not $wixCmd) {
-  throw "wix CLI not found on PATH. Install with: winget install --silent --exact WiXToolset.WiXCLI --version 7.0.0.0"
+  throw "wix CLI not found on PATH. Install with: winget install --silent --exact WiXToolset.WiXCLI --version 6.0.2.0"
 }
 
 # WiX resolves relative File sources against the current directory; pin it to
