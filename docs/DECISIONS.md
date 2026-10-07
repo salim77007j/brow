@@ -178,3 +178,38 @@ skipping the control (saves ~1 build, loses harness sanity).
 **Risks accepted.** Two extra full builds (~4–6 runner-hours) per matrix run on
 a public repo (free runners) — cheap insurance against a wrong engine-profile
 decision.
+
+---
+
+## D-008 — Guard verdicts come from observable process state, never from wrapper PIDs or unguarded `wait`
+
+**Date:** 2026-10-08
+
+**Context.** Two independent harness defects surfaced the same day. (1) The
+product smoke's RSS guardrail read `/proc/$PID/status` where `$PID` was the
+background `timeout(1)` process — always ~2 MB — so the 600 MB guardrail could
+never fail regardless of the browser's footprint. (2) E-001 round 1 (run
+37660240086) aborted inside `wait "$PID"` under `bash -e` in all five matrix
+jobs: the wait's non-zero exit (timeout-kill 124 or a crash signal 13x) is
+*data*, but `set -e` treats it as failure and killed the step before any
+verdict or evidence could be produced. Both gates reported — or would have
+reported — numbers disconnected from reality.
+
+**Decision.** In any CI gate or experiment harness: (a) sample process state
+from the process that actually owns it (`pgrep -x brow-shell`, not the
+wrapper's PID); (b) capture exit codes of meaningful-failure commands via
+guarded forms (`cmd || RC=$?`, `set +e` windows) and classify explicitly;
+(c) every verdict path must emit its evidence (summary lines, log copies,
+artifact uploads) before the step's exit status is decided. Applied in
+`c362e09da` (smoke RSS) and experiment-branch `90d74a22f` (E-001 round-2
+harness).
+
+**Rejected.** Removing the RSS guardrail until Phase 4 (loses the only
+memory signal on every push); keeping round-1 results as "no crash observed"
+(verdicts without load evidence violate D-007 and could have written a false
+conclusion into the engine-profile decision).
+
+**Risks accepted.** `pgrep -x` depends on procps (standard on runners); the
+guarded-capture style is slightly more verbose. The hardened gates' first run
+must produce a *real* RSS number for example.com — if it trips 600 MB, that is
+signal, not noise, and gets recorded in RISKS/WORKLOG rather than tuned away.

@@ -27,8 +27,43 @@ experiment; update the Status line in place as results land, never rewrite histo
 - **Anchor rule:** verdicts trusted only if s-control PASSES **and** o3-fat-repro
   CRASHES; otherwise the repro must be re-established on hardware before any
   conclusion (DECISIONS D-007).
-- **Status:** RUNNING (5 matrix jobs dispatched 2026-10-08; ~2–3 h fat-LTO builds).
-- **Results:** *to be appended below when the run completes.*
+- **Status:** ROUND 2 RUNNING (run
+  [37678828465](https://github.com/salim77007j/brow/actions/runs/37678828465)
+  dispatched 2026-10-08 after the harness fix; results appended below on completion).
+
+### Round 1 — INVALID (harness bug, D-007 anchor rule fired as designed)
+
+- Run 37660240086 completed with all **five** jobs failed, and **zero verdict
+  lines** in any job summary.
+- **Root cause (harness, not codegen):** the repro step launched
+  `timeout 150 xvfb-run … brow-shell &` and later executed `wait "$PID"` in a
+  `bash -e` step. Any non-zero `wait` (timeout-kill 124, SIGSEGV 13x, clean
+  exit) trips `set -e` and aborts the step with that exit code **before** the
+  verdict echo, the log copy, and the artifact upload. The only verdict path
+  that could ever print (process still alive after the 155-iteration watch
+  loop) is nearly unreachable because `timeout 150` fires first.
+- **Raw data salvaged from job logs:** all five variants — s-control included —
+  ended with `Process completed with exit code 124`, i.e. every browser
+  instance was still alive when the 150 s window closed. **No SIGSEGV, no
+  panic, no clean early exit in any variant.** Engine-build phases completed
+  normally in all five (e.g. s-control `Finished production profile
+  [optimized] target(s) in 16m 51s`).
+- **Why this is not a verdict:** "alive" was never tied to page-load evidence
+  (crash-test.log was never copied/uploaded on any path), so a browser parked
+  on an error page would look identical to a loaded wikipedia. D-007 requires
+  s-control PASS **and** o3-fat-repro CRASH; neither verdict was rendered.
+- **Fix (experiment branch `90d74a22f`):** verdict now derived from
+  `timeout(1)`'s own exit status (124 = PASS alive, ≥128 = CRASH signal N−128,
+  else EXITED = red); engine load markers (`filter engine loaded`,
+  `fingerprint defenses active` — same signals the product smoke gate uses)
+  printed on every path; crash-test.log copied and uploaded even on red jobs;
+  orphan cleanup after the window; verdict drives job color (green = alive).
+- **Lesson (also relevant to CI design generally):** under `bash -e`, a bare
+  `wait`/`grep`/`kill` whose non-zero result is *meaningful data* must be
+  guarded (`cmd || RC=$?`), or the harness aborts before it reports. Same
+  class of defect found and fixed the same day in the product smoke's RSS
+  guardrail (`c362e09da`: it sampled the timeout wrapper's ~2 MB VmRSS instead
+  of the browser's, making the 600 MB guardrail decorative).
 
 <!-- Results template:
 | Variant | Verdict | Notes |

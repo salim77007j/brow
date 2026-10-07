@@ -235,3 +235,40 @@ through its own verified commits.
 trees (same file contents, new shas). Lesson recorded: after creating an
 experiment branch, immediately switch back or open a worktree.
 
+
+---
+
+## 2026-10-08 · Phase 1.7 · Session re-entry, harness audit, E-001 round-2 dispatch, RSS guardrail fix
+
+**WHAT.**
+- Sandbox was reset between sessions; re-ran the 0.1 protocol: credentials
+  restored (outside repo, mode 600), fresh clone, local HEAD == origin/main ==
+  `7cc9738` (== `v0.6.1-safe`); discovered remote `v0.7-rebuild` already
+  carried the completed Phase 0 and Phase 1.1–1.6 — aligned the local branch
+  to `origin/v0.7-rebuild` (`a89c2d1`) instead of duplicating any of it
+  (a redundant local commit was discarded *before* push; nothing force-pushed).
+- Audited the gated run `37661290512` @ `adf958dd5`: **success** — all fast
+  gates green, Linux engine build green (147 MiB vs 160 gate), Windows build
+  green; branch protection on `main` re-verified live via API (required
+  checks: both platform builds, strict, no force-push/deletion).
+- E-001 round 1 (run 37660240086): **INVALID** — harness bug (`wait` under
+  `bash -e` aborts before any verdict/evidence). Raw logs show all five
+  variants (s-control included) alive at the 150 s kill; no SIGSEGV anywhere.
+  Postmortem + fix recorded in `docs/EXPERIMENTS.md` (E-001).
+- Fixed the E-001 harness on `experiment/o2o3-codegen` (`90d74a22f`) and
+  re-dispatched: run [37678828465] (round 2, 5 variants).
+- Fixed the product smoke's RSS guardrail on `v0.7-rebuild` (`c362e09da`):
+  it sampled the timeout wrapper's VmRSS (decorative 600 MB gate); now samples
+  the real brow-shell process. D-008 records the rule behind both fixes.
+- Process notes: byte-level verification (`hexdump`) was used before recording
+  the trigger-filter finding — the suspected `branches:` YAML corruption turned
+  out to be a rendering artifact of the local toolchain (file bytes were valid
+  `[main, v0.7-rebuild]` all along); **no false finding entered the repo**.
+
+**WHY.** Owner rules 0.1 (verify environment/remote state after reset),
+0.5 (experiments on dedicated branches with recorded results), 0.8 (gates must
+measure reality), 0.9/0.10 (decisions and risks updated as they surface).
+
+**VERIFIED.** All claims above cite API responses, job logs fetched from
+run 37660240086, or byte-level file reads; round-2 run id recorded; both
+fixes pushed and visible in remote history.
