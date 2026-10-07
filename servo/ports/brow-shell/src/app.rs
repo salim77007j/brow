@@ -189,7 +189,14 @@ impl winit::application::ApplicationHandler<BrowEvent> for BrowApp {
                 .preferences(preferences)
                 .event_loop_waker(Box::new(waker))
                 .build();
+            // brow (v0.6.1): setup_logging is now best-effort (see
+            // components/servo/servo.rs) — our env_logger from main() stays
+            // installed and the engine only raises the level. Restore the
+            // info default the shell configured when RUST_LOG is unset.
             servo.setup_logging();
+            if std::env::var_os("RUST_LOG").is_none() {
+                log::set_max_level(log::LevelFilter::Info);
+            }
             state.servo = Some(servo);
 
             // 5. Session restore / first tab.

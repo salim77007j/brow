@@ -1082,9 +1082,12 @@ impl Servo {
         let con_logger = FromEmbedderLogger::new(constellation_chan);
 
         let filter = max(env_logger.filter(), con_logger.filter());
-        let logger = BothLogger(env_logger, con_logger);
-
-        log::set_boxed_logger(Box::new(logger)).expect("Failed to set logger.");
+        // brow (v0.6.1): embedders may install their own logger before
+        // building the engine (brow-shell's env_logger init beat us here and
+        // the previous `.expect("Failed to set logger.")` aborted the whole
+        // process). Best-effort install instead: when a logger already
+        // exists we keep it and only raise the level filter.
+        let _ = log::set_boxed_logger(Box::new(logger));
         log::set_max_level(filter);
     }
 
