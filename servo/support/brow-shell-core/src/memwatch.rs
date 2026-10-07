@@ -45,44 +45,46 @@ pub fn current_process_rss_bytes() -> Option<u64> {
             peak_pagefile_usage: usize,
         }
 
-        // SAFETY: the counters struct is a plain FFI out-parameter laid out
-        // exactly as Win32 PROCESS_MEMORY_COUNTERS expects, and the
-        // current-process pseudo handle is always valid.
-        unsafe {
-            let counters = ProcessMemoryCounters {
-                cb: std::mem::size_of::<ProcessMemoryCounters>() as u32,
-                page_fault_count: 0,
-                peak_working_set_size: 0,
-                working_set_size: 0,
-                quota_peak_paged_pool_usage: 0,
-                quota_paged_pool_usage: 0,
-                quota_peak_non_paged_pool_usage: 0,
-                quota_non_paged_pool_usage: 0,
-                pagefile_usage: 0,
-                peak_pagefile_usage: 0,
-            };
-            // Raw FFI (no winapi dependency here — kernel32 is always
-            // linked on Windows).
-            #[link(name = "kernel32")]
-            unsafe extern "system" fn get_current_process() -> *mut core::ffi::c_void;
-            #[link(name = "kernel32")]
-            unsafe extern "system" fn get_process_memory_info(
+        // brow (v0.6.1): kernel32 exports the K32* variants since Windows 7;
+        // no psapi dependency needed. Raw FFI keeps brow-shell-core free of
+        // windows-sys (the process handle is the always-valid pseudo handle).
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetCurrentProcess() -> *mut core::ffi::c_void;
+            #[link_name = "K32GetProcessMemoryInfo"]
+            fn get_process_memory_info(
                 process: *mut core::ffi::c_void,
                 counters: *mut ProcessMemoryCounters,
                 cb: u32,
             ) -> i32;
+        }
 
-            let mut counters = counters;
-            let ok = get_process_memory_info(
-                get_current_process(),
+        // SAFETY: the counters struct is a plain FFI out-parameter laid out
+        // exactly as Win32 PROCESS_MEMORY_COUNTERS expects, and the
+        // current-process pseudo handle is always valid.
+        let mut counters = ProcessMemoryCounters {
+            cb: std::mem::size_of::<ProcessMemoryCounters>() as u32,
+            page_fault_count: 0,
+            peak_working_set_size: 0,
+            working_set_size: 0,
+            quota_peak_paged_pool_usage: 0,
+            quota_paged_pool_usage: 0,
+            quota_peak_non_paged_pool_usage: 0,
+            quota_non_paged_pool_usage: 0,
+            pagefile_usage: 0,
+            peak_pagefile_usage: 0,
+        };
+        let ok = unsafe {
+            get_process_memory_info(
+                unsafe { GetCurrentProcess() },
                 &mut counters,
                 counters.cb,
-            );
-            if ok != 0 {
-                Some(counters.working_set_size as u64)
-            } else {
-                None
-            }
+            )
+        };
+        if ok != 0 {
+            Some(counters.working_set_size as u64)
+        } else {
+            None
         }
     }
     #[cfg(not(any(target_os = "linux", target_os = "windows")))]
