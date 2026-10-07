@@ -63,3 +63,32 @@ deterministic pass/fail; no product code touched. Real-gate validation
 happens on this push's CI run — first green run also records the size/RSS
 baselines for Phase 1 calibration.
 
+---
+
+## 2026-10-08 · Phase 0 · Branch protection active + first gated run validated
+
+**WHAT.**
+- Branch protection on `main` ENABLED via API (HTTP 200): required status
+  checks = "Build Servo from source (Linux x86_64, release)" + "Build Servo
+  + brow-shell (Windows x86_64, release)", strict up-to-date, force-push and
+  deletion disabled. `enforce_admins` left **false** as the deliberate escape
+  hatch (prevents protection deadlocks; bypass is an explicit, logged act).
+- First gated CI run on `v0.7-rebuild` @ `11847e2fe`: run `37652133060`.
+  Fast gates validated within minutes: `brow-net-core` ✅,
+  `brow-shell-core`/`brow-cache`/`brow-resbench` ✅, clippy+fmt ✅;
+  `brow-privacy` + `brow-shell-check` in progress; engine-build jobs queued
+  behind them (Linux ~1–2 h, Windows ~3–5 h — results reviewed at Phase 1
+  start per PROCESS §6.3).
+
+**WHY.** Owner directive 0.7 ("if any gate fails, the push is rejected") is
+now mechanically enforced on `main` instead of being advisory; directive 0.8
+incremental verification begins with every subsequent sub-item.
+
+**VERIFIED.** API response 200; run visible in Actions with the branch
+trigger; job conclusions observed via the API, not assumed.
+
+**Risk updates.** R-08 (branch protection unenforceable) → **CLOSED**;
+R-07 (CI cost) → **MITIGATED** (concurrency + fast-gates-first observed
+working). Next phase entry updates both in `docs/RISKS.md` at Phase 1 close.
+
+
