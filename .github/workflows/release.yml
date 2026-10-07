@@ -88,9 +88,19 @@ jobs:
           cd servo
           ./mach bootstrap
 
-      - name: Build brow-shell (production-stripped, locked)
+      - name: Build servoshell (production-stripped, locked)
         working-directory: servo
-        run: ./mach build --locked --profile production-stripped -p servoshell -p brow-shell
+        run: ./mach build --locked --profile production-stripped
+
+      - name: Build brow-shell (product binary, shares the dependency build)
+        # brow (v0.6.1): mach prepends --manifest-path ports/servoshell/Cargo.toml
+        # to every cargo invocation, so a second `-p` cannot be smuggled through
+        # mach (cargo rejects duplicate --package). Build brow-shell directly
+        # with cargo from the workspace root — same toolchain (rust-toolchain.toml),
+        # same target dir and profile as the mach build, so the entire
+        # dependency graph is reused and only brow-shell itself compiles.
+        working-directory: servo
+        run: cargo build --locked --profile production-stripped -p brow-shell
 
       - name: Stage payload
         # brow (v0.6.1 reassessment, §0): v0.6.0 shipped default-members
@@ -266,10 +276,17 @@ jobs:
           .\mach fetch
           .\mach bootstrap-gstreamer
 
-      - name: Build brow-shell (production-stripped, locked)
+      - name: Build servoshell (production-stripped, locked)
         working-directory: servo
         shell: pwsh
-        run: .\mach build --locked --profile production-stripped -p servoshell -p brow-shell
+        run: .\mach build --locked --profile production-stripped
+
+      - name: Build brow-shell (product binary, shares the dependency build)
+        # brow (v0.6.1): see the matching Linux step for why this is a plain
+        # cargo invocation rather than a second -p on mach.
+        working-directory: servo
+        shell: pwsh
+        run: cargo build --locked --profile production-stripped -p brow-shell
 
       - name: Stage payload
         # brow (v0.6.1 reassessment, §0): brow-shell is now the product
