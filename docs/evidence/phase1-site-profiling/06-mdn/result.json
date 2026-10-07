@@ -1,0 +1,35 @@
+{
+  "slug": "06-mdn",
+  "url": "https://developer.mozilla.org/en-US/docs/Web/CSS",
+  "dwell_s": 60,
+  "verdict": "timeout",
+  "exit_code": -15,
+  "peak_tree_rss_mb": 380.4,
+  "screenshots": {
+    "8": true,
+    "25": true,
+    "50": true
+  },
+  "log_excerpt": [
+    "[2026-10-07T17:22:44Z WARN  winit::platform_impl::linux::x11::xdisplay] error setting XSETTINGS; Xft options won't reload automatically",
+    "[2026-10-07T17:22:44Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/06-mdn/data/engine/auth_cache.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:22:44Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/06-mdn/data/engine/hsts_list.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:22:44Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/06-mdn/data/engine/cookie_jar.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:22:44Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/06-mdn/data/engine/alt_svc_cache.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:22:44Z INFO  net::privacy] brow privacy: fingerprint defenses (Standard) written to /home/z/my-project/measure/phase1-sites/06-mdn/data/engine/userscripts/brow-fingerprint-defense.js",
+    "[2026-10-07T17:22:44Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/06-mdn/data/engine/localstorage.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:22:44Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/06-mdn/data/engine/localstorage.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:22:44Z INFO  net::privacy] brow privacy: filter engine loaded 54934 network rules",
+    "[2026-10-07T17:22:44Z INFO  script::dom::userscripts] brow privacy: fingerprint defenses active (level Standard, canvas2d-noise, webgl-spoof+noise, audiocontext-noise, navigator-reduction)",
+    "    0:1004 Invalid rule: '.breadcrumbs-bar:has(mdn-toggle-sidebar){', SelectorError(UnexpectedIdent(\"has\"))",
+    "    0:1398 Invalid rule: '.code-example:has(.hidden,[class*=interactive-example]){', SelectorError(UnexpectedIdent(\"has\"))",
+    "    0:13601 Invalid rule: ':is(.content-section ul.specifications-list) li:has(details){', SelectorError(UnexpectedIdent(\"has\"))",
+    "    0:14507 Invalid rule: ':is(:is(:is(.content-section ul.specifications-list) details) summary):hover:has(a:hover){', SelectorError(UnexpectedIdent(\"has\"))",
+    "    0:337 Invalid rule: ':is(.left-sidebar ol):not(:has(>li>details))>li{', SelectorError(UnexpectedIdent(\"has\"))",
+    "    0:1488 Invalid rule: ':is(:is(.left-sidebar details) summary):hover:has(a:hover){', SelectorError(UnexpectedIdent(\"has\"))",
+    "    0:2180 Invalid rule: 'ul:has(li){', SelectorError(UnexpectedIdent(\"has\"))",
+    "    0:3713 Invalid rule: ':is(.sidebar-placement .placement-container):has(>.placement-link:focus-visible){', SelectorError(UnexpectedIdent(\"has\"))",
+    "[2026-10-07T17:22:45Z ERROR script::runtime::script_runtime] Unhandled promise rejection: (new ReferenceError(\"IntersectionObserver is not defined\", \"https://developer.mozilla.org/static/client/index.",
+    "[2026-10-07T17:22:45Z INFO  net::fetch::methods] brow privacy: blocked https://developer.mozilla.org/pong/get via rule: ||developer.mozilla.org/pong/"
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "slug": "01-example",
+  "url": "https://example.com",
+  "dwell_s": 30,
+  "verdict": "timeout",
+  "exit_code": -15,
+  "peak_tree_rss_mb": 307.1,
+  "screenshots": {
+    "8": true,
+    "25": true
+  },
+  "log_excerpt": [
+    "[2026-10-07T17:18:35Z WARN  winit::platform_impl::linux::x11::xdisplay] error setting XSETTINGS; Xft options won't reload automatically",
+    "[2026-10-07T17:18:35Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/01-example/data/engine/auth_cache.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:18:35Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/01-example/data/engine/hsts_list.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:18:35Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/01-example/data/engine/cookie_jar.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:18:35Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/01-example/data/engine/alt_svc_cache.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:18:35Z INFO  net::privacy] brow privacy: fingerprint defenses (Standard) written to /home/z/my-project/measure/phase1-sites/01-example/data/engine/userscripts/brow-fingerprint-defense.j",
+    "[2026-10-07T17:18:35Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/01-example/data/engine/localstorage.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:18:35Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/01-example/data/engine/localstorage.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:18:35Z INFO  net::privacy] brow privacy: filter engine loaded 54934 network rules",
+    "[2026-10-07T17:18:35Z INFO  script::dom::userscripts] brow privacy: fingerprint defenses active (level Standard, canvas2d-noise, webgl-spoof+noise, audiocontext-noise, navigator-reduction)"
+  ]
+}

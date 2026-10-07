@@ -1,0 +1,24 @@
+{
+  "slug": "03-hackernews",
+  "url": "https://news.ycombinator.com",
+  "dwell_s": 45,
+  "verdict": "timeout",
+  "exit_code": -15,
+  "peak_tree_rss_mb": 305.6,
+  "screenshots": {
+    "8": true,
+    "25": true
+  },
+  "log_excerpt": [
+    "[2026-10-07T17:19:56Z WARN  winit::platform_impl::linux::x11::xdisplay] error setting XSETTINGS; Xft options won't reload automatically",
+    "[2026-10-07T17:19:56Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/03-hackernews/data/engine/localstorage.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:19:56Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/03-hackernews/data/engine/localstorage.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:19:56Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/03-hackernews/data/engine/auth_cache.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:19:56Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/03-hackernews/data/engine/hsts_list.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:19:56Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/03-hackernews/data/engine/cookie_jar.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:19:56Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/03-hackernews/data/engine/alt_svc_cache.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:19:56Z INFO  net::privacy] brow privacy: fingerprint defenses (Standard) written to /home/z/my-project/measure/phase1-sites/03-hackernews/data/engine/userscripts/brow-fingerprint-defens",
+    "[2026-10-07T17:19:56Z INFO  net::privacy] brow privacy: filter engine loaded 54934 network rules",
+    "[2026-10-07T17:19:57Z INFO  script::dom::userscripts] brow privacy: fingerprint defenses active (level Standard, canvas2d-noise, webgl-spoof+noise, audiocontext-noise, navigator-reduction)"
+  ]
+}

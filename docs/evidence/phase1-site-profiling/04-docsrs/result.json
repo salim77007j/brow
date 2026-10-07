@@ -1,0 +1,32 @@
+{
+  "slug": "04-docsrs",
+  "url": "https://docs.rs/servo",
+  "dwell_s": 40,
+  "verdict": "timeout",
+  "exit_code": -15,
+  "peak_tree_rss_mb": 383.6,
+  "screenshots": {
+    "8": true,
+    "25": true
+  },
+  "log_excerpt": [
+    "[2026-10-07T17:20:57Z WARN  winit::platform_impl::linux::x11::xdisplay] error setting XSETTINGS; Xft options won't reload automatically",
+    "[2026-10-07T17:20:57Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/04-docsrs/data/engine/localstorage.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:20:57Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/04-docsrs/data/engine/localstorage.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:20:57Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/04-docsrs/data/engine/auth_cache.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:20:57Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/04-docsrs/data/engine/hsts_list.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:20:57Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/04-docsrs/data/engine/cookie_jar.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:20:57Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/04-docsrs/data/engine/alt_svc_cache.json: No such file or directory (os error 2)",
+    "[2026-10-07T17:20:57Z INFO  net::privacy] brow privacy: fingerprint defenses (Standard) written to /home/z/my-project/measure/phase1-sites/04-docsrs/data/engine/userscripts/brow-fingerprint-defense.js",
+    "[2026-10-07T17:20:58Z INFO  net::privacy] brow privacy: filter engine loaded 54934 network rules",
+    "[2026-10-07T17:20:59Z INFO  script::dom::userscripts] brow privacy: fingerprint defenses active (level Standard, canvas2d-noise, webgl-spoof+noise, audiocontext-noise, navigator-reduction)",
+    "    10:980 Invalid rule: '[type=button]::-moz-focus-inner,[type=reset]::-moz-focus-inner,[type=submit]::-moz-focus-inner,button::-moz-focus-inner{', SelectorError(UnexpectedIdent(\"-moz-focus-inner\"))",
+    "    10:1128 Invalid rule: '[type=button]:-moz-focusring,[type=reset]:-moz-focusring,[type=submit]:-moz-focusring,button:-moz-focusring{', SelectorError(UnexpectedIdent(\"-moz-focusring\"))",
+    "    10:1580 Invalid rule: '[type=number]::-webkit-inner-spin-button,[type=number]::-webkit-outer-spin-button{', SelectorError(UnexpectedIdent(\"-webkit-inner-spin-button\"))",
+    "    10:1737 Invalid rule: '[type=search]::-webkit-search-decoration{', SelectorError(UnexpectedIdent(\"-webkit-search-decoration\"))",
+    "    10:1789 Invalid rule: '::-webkit-file-upload-button{', SelectorError(UnexpectedIdent(\"-webkit-file-upload-button\"))",
+    "    10:2506 Invalid rule: '.opera-only :-o-prefocus,.pure-g{', SelectorError(UnexpectedIdent(\"-o-prefocus\"))",
+    "    10:4661 Invalid rule: '.pure-button::-moz-focus-inner{', SelectorError(UnexpectedIdent(\"-moz-focus-inner\"))",
+    "    10:4781 Invalid rule: '.opera-only :-o-prefocus,.pure-button-group{', SelectorError(UnexpectedIdent(\"-o-prefocus\"))"
+  ]
+}

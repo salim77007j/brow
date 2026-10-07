@@ -1,0 +1,47 @@
+[
+  {
+    "slug": "10-youtube",
+    "url": "https://www.youtube.com",
+    "dwell_s": 75,
+    "verdict": "timeout",
+    "exit_code": -15,
+    "peak_tree_rss_mb": 353.3,
+    "screenshots": {
+      "8": true,
+      "25": true,
+      "50": true
+    },
+    "log_excerpt": [
+      "[2026-10-07T17:27:18Z WARN  winit::platform_impl::linux::x11::xdisplay] error setting XSETTINGS; Xft options won't reload automatically",
+      "[2026-10-07T17:27:18Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/10-youtube/data/engine/localstorage.json: No such file or directory (os error 2)",
+      "[2026-10-07T17:27:18Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/10-youtube/data/engine/localstorage.json: No such file or directory (os error 2)",
+      "[2026-10-07T17:27:18Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/10-youtube/data/engine/auth_cache.json: No such file or directory (os error 2)",
+      "[2026-10-07T17:27:18Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/10-youtube/data/engine/hsts_list.json: No such file or directory (os error 2)",
+      "[2026-10-07T17:27:18Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/10-youtube/data/engine/cookie_jar.json: No such file or directory (os error 2)",
+      "[2026-10-07T17:27:18Z WARN  servo_base] couldn't open /home/z/my-project/measure/phase1-sites/10-youtube/data/engine/alt_svc_cache.json: No such file or directory (os error 2)",
+      "[2026-10-07T17:27:18Z INFO  net::privacy] brow privacy: fingerprint defenses (Standard) written to /home/z/my-project/measure/phase1-sites/10-youtube/data/engine/userscripts/brow-fingerprint-defense.j",
+      "[2026-10-07T17:27:19Z INFO  net::privacy] brow privacy: filter engine loaded 54934 network rules",
+      "[2026-10-07T17:27:19Z INFO  net::privacy] brow privacy: dropped unpartitioned third-party cookie for www.youtube.com (site https://brow-opaque.invalid/)",
+      "[2026-10-07T17:27:19Z INFO  net::privacy] brow privacy: dropped unpartitioned third-party cookie for www.youtube.com (site https://brow-opaque.invalid/)",
+      "[2026-10-07T17:27:19Z INFO  net::privacy] brow privacy: dropped unpartitioned third-party cookie for www.youtube.com (site https://brow-opaque.invalid/)",
+      "[2026-10-07T17:27:19Z INFO  net::privacy] brow privacy: dropped unpartitioned third-party cookie for www.youtube.com (site https://brow-opaque.invalid/)",
+      "[2026-10-07T17:27:19Z INFO  net::privacy] brow privacy: dropped unpartitioned third-party cookie for www.youtube.com (site https://brow-opaque.invalid/)",
+      "[2026-10-07T17:27:19Z INFO  net::privacy] brow privacy: dropped unpartitioned third-party cookie for www.youtube.com (site https://brow-opaque.invalid/)",
+      "[2026-10-07T17:27:19Z INFO  net::privacy] brow privacy: dropped unpartitioned third-party cookie for www.youtube.com (site https://brow-opaque.invalid/)",
+      "[2026-10-07T17:27:19Z INFO  script::dom::userscripts] brow privacy: fingerprint defenses active (level Standard, canvas2d-noise, webgl-spoof+noise, audiocontext-noise, navigator-reduction)",
+      "    0:650 Invalid rule: '#search-input.ytd-searchbox-spt #search::-webkit-input-placeholder{', SelectorError(UnexpectedIdent(\"-webkit-input-placeholder\"))",
+      "    0:728 Invalid rule: '#search-input.ytd-searchbox-spt #search::-moz-input-placeholder{', SelectorError(UnexpectedIdent(\"-moz-input-placeholder\"))",
+      "    0:803 Invalid rule: '#search-input.ytd-searchbox-spt #search:-ms-input-placeholder{', SelectorError(UnexpectedIdent(\"-ms-input-placeholder\"))",
+      "    0:1637 Invalid rule: 'body::-webkit-scrollbar{', SelectorError(UnexpectedIdent(\"-webkit-scrollbar\"))",
+      "    0:1672 Invalid rule: 'body::-webkit-scrollbar-thumb{', SelectorError(UnexpectedIdent(\"-webkit-scrollbar-thumb\"))",
+      "    121:27355 Invalid rule: '.ytdVolumeControlsNativeSlider::-webkit-slider-runnable-track{', SelectorError(UnexpectedIdent(\"-webkit-slider-runnable-track\"))",
+      "    121:27593 Invalid rule: '.ytdVolumeControlsNativeSlider::-moz-range-track{', SelectorError(UnexpectedIdent(\"-moz-range-track\"))",
+      "    121:27806 Invalid rule: '.ytdVolumeControlsNativeSlider::-webkit-slider-thumb{', SelectorError(UnexpectedIdent(\"-webkit-slider-thumb\"))",
+      "    121:27965 Invalid rule: '.ytdVolumeControlsNativeSlider::-moz-range-thumb{', SelectorError(UnexpectedIdent(\"-moz-range-thumb\"))",
+      "    121:28090 Invalid rule: '.ytdVolumeControlsNativeSlider::-webkit-slider-runnable-track{', SelectorError(UnexpectedIdent(\"-webkit-slider-runnable-track\"))",
+      "    121:28163 Invalid rule: '.ytdVolumeControlsNativeSlider::-moz-range-track{', SelectorError(UnexpectedIdent(\"-moz-range-track\"))",
+      "    121:32027 Invalid rule: '.ytFlexibleActionsViewModelScrollable::-webkit-scrollbar{', SelectorError(UnexpectedIdent(\"-webkit-scrollbar\"))",
+      "    121:32117 Invalid rule: '.ytFlexibleActionsViewModelScrollable::-webkit-scrollbar-thumb{', SelectorError(UnexpectedIdent(\"-webkit-scrollbar-thumb\"))"
+    ]
+  }
+]
