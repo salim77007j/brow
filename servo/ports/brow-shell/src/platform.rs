@@ -28,6 +28,78 @@ pub fn queue_global(window: Rc<MinimalSoftwareWindow>) {
     PENDING.with_borrow_mut(|q| q.push(window));
 }
 
+/// brow (v0.6.1, fix 4.2): install the bundled Noto Sans / Noto Sans Arabic
+/// fonts into the platform's per-user font directory **before** Slint (and
+/// its fontdb) initializes, so Arabic text renders with proper glyphs on any
+/// system — including minimal containers where no Arabic font exists.
+///
+/// Slint resolves fonts through fontdb, which scans the standard system
+/// directories plus the per-user font directories; copying the bundled TTFs
+/// there once (idempotent, content-addressed by filename) is the one
+/// approach that works across all platforms without private Slint APIs.
+pub fn install_bundled_fonts() {
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let Some(exe_dir) = exe.parent() else { return };
+    // Also walk one level up: dev builds live at <target>/<profile>/ while
+    // packaging puts fonts in <root>/fonts.
+    let font_dirs: [Option<std::path::PathBuf>; 2] = [
+        Some(exe_dir.join("fonts")),
+        exe_dir.parent().map(|p| p.join("fonts")),
+    ];
+    let user_font_dir = if cfg!(target_os = "windows") {
+        std::env::var("LOCALAPPDATA").ok().map(|l| {
+            std::path::PathBuf::from(l)
+                .join("Microsoft")
+                .join("Windows")
+                .join("Fonts")
+        })
+    } else if cfg!(target_os = "macos") {
+        std::env::var("HOME").ok().map(|h| {
+            std::path::PathBuf::from(h).join("Library").join("Fonts")
+        })
+    } else {
+        std::env::var("HOME").ok().map(|h| {
+            std::path::PathBuf::from(h)
+                .join(".local")
+                .join("share")
+                .join("fonts")
+                .join("brow")
+        })
+    };
+    let Some(user_font_dir) = user_font_dir else { return };
+    if std::fs::create_dir_all(&user_font_dir).is_err() {
+        return;
+    }
+    for dir in font_dirs.into_iter().flatten() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let is_font = matches!(
+                path.extension().and_then(|e| e.to_str()),
+                Some("ttf") | Some("otf")
+            );
+            if !is_font {
+                continue;
+            }
+            let Some(name) = path.file_name() else { continue };
+            let target = user_font_dir.join(name);
+            // Idempotent: skip when the same size already exists.
+            if let (Ok(a), Ok(b)) = (std::fs::metadata(&path), std::fs::metadata(&target)) {
+                if a.len() == b.len() {
+                    continue;
+                }
+            }
+            if std::fs::copy(&path, &target).is_ok() {
+                log::info!("brow: installed font {}", target.display());
+            }
+        }
+    }
+}
+
 /// 32-bit XRGB pixel for softbuffer presentation.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Xrgb8888(pub u32);

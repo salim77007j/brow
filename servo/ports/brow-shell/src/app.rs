@@ -47,6 +47,10 @@ pub struct BrowApp {
 }
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+    // brow (v0.6.1, fix 4.2): bundled Noto Sans + Noto Sans Arabic must be
+    // visible to fontdb before Slint initializes its font cache.
+    crate::platform::install_bundled_fonts();
+
     let event_loop = winit::event_loop::EventLoop::<BrowEvent>::with_user_event().build()?;
     let proxy: EventLoopProxy<BrowEvent> = event_loop.create_proxy();
     let state: SharedState = Rc::new(RefCell::new(BrowState::new(proxy)));
@@ -170,9 +174,19 @@ impl winit::application::ApplicationHandler<BrowEvent> for BrowApp {
 
             state.chrome = Some(chrome);
 
-            // 4. Engine.
+            // 4. Engine — with REAL opts + preferences (v0.6.1, fix 3.6):
+            // v0.6.0 passed `ServoBuilder::default()`, so the engine ran with
+            // no config dir (no privacy stats path, no user prefs) and the
+            // shell's privacy settings never reached it.
             let waker = BrowWaker(state.proxy.clone());
+            let engine_dir = state.data_dir.join("engine");
+            let _ = std::fs::create_dir_all(&engine_dir);
+            let mut opts = servo::Opts::default();
+            opts.config_dir = Some(engine_dir);
+            let preferences = engine_preferences(&state.settings);
             let servo = servo::ServoBuilder::default()
+                .opts(opts)
+                .preferences(preferences)
                 .event_loop_waker(Box::new(waker))
                 .build();
             servo.setup_logging();
@@ -454,6 +468,8 @@ fn execute_action(
             let current = match key.as_str() {
                 "block_ads" => state.settings.block_ads,
                 "dnt" => state.settings.dnt,
+                "block_third_party_cookies" => state.settings.block_third_party_cookies,
+                "block_cname_tracking" => state.settings.block_cname_tracking,
                 "restore_session" => state.settings.restore_session,
                 _ => false,
             };
@@ -483,9 +499,18 @@ fn execute_action(
                     };
                     state.settings.search_engine = next;
                 }
+                "fingerprint_defense" => {
+                    let next = match state.settings.fingerprint_defense.as_str() {
+                        "off" => "standard",
+                        "strict" => "off",
+                        _ => "strict",
+                    };
+                    let _ = state.settings.set_from_str("fingerprint_defense", next);
+                }
                 _ => {}
             }
             let _ = state.settings.save(&state.data_dir.join("settings.json"));
+            apply_engine_prefs(state);
         }
         Action::SleepActiveTab => {
             if let Some(id) = state.tabs.active_id() {
@@ -498,12 +523,48 @@ fn execute_action(
     state.sync_chrome();
 }
 
+/// brow (v0.6.1, fix 3.6): build the engine's `Preferences` from the shell's
+/// settings store. v0.6.0 ran the engine on `Preferences::default()` and the
+/// settings panel wrote JSON no engine code ever read — the UI reported
+/// protections that were not active.
+fn engine_preferences(settings: &brow_shell_core::settings::Settings) -> servo::Preferences {
+    let mut prefs = servo::Preferences::default();
+    prefs.network_privacy_filter_enabled = settings.block_ads;
+    prefs.network_privacy_block_third_party_cookies = settings.block_third_party_cookies;
+    prefs.network_privacy_fingerprint_level = settings.fingerprint_defense.clone();
+    prefs.network_privacy_cname_detection_enabled = settings.block_cname_tracking;
+    prefs.network_dns_over_https_templates = settings.doh_template.clone();
+    if matches!(settings.min_tls_version.as_str(), "1.2" | "1.3") {
+        prefs.network_tls_min_version = format!("TLSv{}", settings.min_tls_version);
+    }
+    prefs.hidden_webview_max_fps = i64::from(settings.hidden_webview_fps);
+    prefs
+}
+
 fn apply_engine_prefs(state: &mut BrowState) {
-    // Bridge shell settings into engine prefs (phases 2+3).
+    // Bridge shell settings into engine prefs (phases 2+3 + v0.6.1 fix 3.6:
+    // the privacy toggles are now live — the filter engine and cookie paths
+    // read these prefs per request).
     if let Some(servo) = &state.servo {
         let _ = servo.set_preference(
             "hidden_webview_max_fps",
             servo::PrefValue::Int(i64::from(state.settings.hidden_webview_fps)),
+        );
+        let _ = servo.set_preference(
+            "network_privacy_filter_enabled",
+            servo::PrefValue::Bool(state.settings.block_ads),
+        );
+        let _ = servo.set_preference(
+            "network_privacy_block_third_party_cookies",
+            servo::PrefValue::Bool(state.settings.block_third_party_cookies),
+        );
+        let _ = servo.set_preference(
+            "network_privacy_fingerprint_level",
+            servo::PrefValue::String(state.settings.fingerprint_defense.clone()),
+        );
+        let _ = servo.set_preference(
+            "network_privacy_cname_detection_enabled",
+            servo::PrefValue::Bool(state.settings.block_cname_tracking),
         );
     }
 }

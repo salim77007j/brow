@@ -47,6 +47,10 @@ export struct SettingsInfo {
     dnt: bool,
     restore-session: bool,
     hidden-fps: string,
+    // brow (v0.6.1): new privacy settings state.
+    block-third-party-cookies: bool,
+    block-cname-tracking: bool,
+    fingerprint-label: string,
 }
 
 export struct L10nStrings {
@@ -78,6 +82,10 @@ export struct L10nStrings {
     restore-session: string,
     dns-over-https: string,
     min-tls: string,
+    // brow (v0.6.1): new privacy settings strings.
+    third-party-cookies: string,
+    fingerprint-defense: string,
+    cname-tracking: string,
 }
 
 export component IconText inherits Text {
@@ -171,6 +179,10 @@ export component BrowserChrome inherits Window {
     min-width: 640px;
     min-height: 88px;
     background: #14161c;
+    // brow (v0.6.1, fix 4.2): ship our own typography. Noto Sans is bundled
+    // with the binary and installed into the user font dir at startup;
+    // Arabic codepoints fall back per-glyph to the bundled Noto Sans Arabic.
+    default-font-family: "Noto Sans";
 
     // ---- state ----------------------------------------------------------
     in property <[TabInfo]> tabs;
@@ -222,12 +234,16 @@ export component BrowserChrome inherits Window {
         spacing: 4px;
 
         // ==== toolbar row =================================================
+        // brow (v0.6.1, fix 4.3): nav glyph semantics follow the locale — in
+        // RTL the back arrow points right and forward points left. Padding
+        // mirrors as well. (Full layout-order mirroring is tracked as
+        // next-step work; Slint 1.17 has no first-class layout direction.)
         HorizontalLayout {
             height: 34px;
             spacing: 4px;
 
-            ToolButton { glyph: "◀"; enabled: root.can-go-back; clicked => { root.go-back(); } }
-            ToolButton { glyph: "▶"; enabled: root.can-go-forward; clicked => { root.go-forward(); } }
+            ToolButton { glyph: root.rtl ? "▶" : "◀"; enabled: root.can-go-back; clicked => { root.go-back(); } }
+            ToolButton { glyph: root.rtl ? "◀" : "▶"; enabled: root.can-go-forward; clicked => { root.go-forward(); } }
             ToolButton {
                 glyph: root.loading ? "×" : "⟳";
                 clicked => { root.loading ? root.go-reload() : root.go-reload(); }
@@ -475,6 +491,20 @@ export component BrowserChrome inherits Window {
                             HorizontalLayout { spacing: 8px; height: row-height;
                                 Text { text: root.i18n.restore-session; font-size: 12px; color: label-color; horizontal-stretch: 1; vertical-alignment: center; horizontal-alignment: root.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left; }
                                 ToolButton { glyph: root.settings.restore-session ? "✓" : "✗"; width: 60px; clicked => { root.setting-toggled("restore_session"); } }
+                            }
+                            // brow (v0.6.1): the privacy section — every
+                            // switch drives a real engine pref (fix 3.6).
+                            HorizontalLayout { spacing: 8px; height: row-height;
+                                Text { text: root.i18n.third-party-cookies; font-size: 12px; color: label-color; horizontal-stretch: 1; vertical-alignment: center; horizontal-alignment: root.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left; }
+                                ToolButton { glyph: root.settings.block-third-party-cookies ? "✓" : "✗"; width: 60px; clicked => { root.setting-toggled("block_third_party_cookies"); } }
+                            }
+                            HorizontalLayout { spacing: 8px; height: row-height;
+                                Text { text: root.i18n.cname-tracking; font-size: 12px; color: label-color; horizontal-stretch: 1; vertical-alignment: center; horizontal-alignment: root.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left; }
+                                ToolButton { glyph: root.settings.block-cname-tracking ? "✓" : "✗"; width: 60px; clicked => { root.setting-toggled("block_cname_tracking"); } }
+                            }
+                            HorizontalLayout { spacing: 8px; height: row-height;
+                                Text { text: root.i18n.fingerprint-defense; font-size: 12px; color: label-color; horizontal-stretch: 1; vertical-alignment: center; horizontal-alignment: root.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left; }
+                                ToolButton { glyph: root.settings.fingerprint-label; width: 90px; clicked => { root.setting-cycled("fingerprint_defense"); } }
                             }
                         }
                     }

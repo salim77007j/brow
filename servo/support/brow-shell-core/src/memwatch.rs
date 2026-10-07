@@ -1,8 +1,9 @@
-/* Memory budget tracking: self-RSS sampling from /proc + pressure derivation.
+/* Memory budget tracking: self-RSS sampling + pressure derivation.
  *
  * Linux reads `/proc/self/status` (VmRSS) — no libc dependency, no sysinfo
- * crate, ~1 µs per sample. Other platforms report `None` and the tracker
- * degrades to tab-side accounting only.
+ * crate, ~1 µs per sample. Windows uses `GetProcessMemoryInfo` (v0.6.1
+ * reassessment, fix 2.2: the RSS sampler was Linux-only, which made the
+ * memory governor inert on the primary shipping platform).
  */
 
 use std::time::{Duration, Instant};
@@ -12,7 +13,8 @@ use serde::{Deserialize, Serialize};
 use crate::lifecycle::DiscardPolicy;
 
 /// RSS + swap-backed resident memory of the current process, in bytes.
-/// Parsed from `/proc/self/status` on Linux; `None` elsewhere.
+/// Parsed from `/proc/self/status` on Linux, `GetProcessMemoryInfo` on
+/// Windows; `None` elsewhere.
 pub fn current_process_rss_bytes() -> Option<u64> {
     #[cfg(target_os = "linux")]
     {
@@ -27,7 +29,63 @@ pub fn current_process_rss_bytes() -> Option<u64> {
         }
         None
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "windows")]
+    {
+        #[repr(C)]
+        struct ProcessMemoryCounters {
+            cb: u32,
+            page_fault_count: u32,
+            peak_working_set_size: usize,
+            working_set_size: usize,
+            quota_peak_paged_pool_usage: usize,
+            quota_paged_pool_usage: usize,
+            quota_peak_non_paged_pool_usage: usize,
+            quota_non_paged_pool_usage: usize,
+            pagefile_usage: usize,
+            peak_pagefile_usage: usize,
+        }
+
+        // SAFETY: the counters struct is a plain FFI out-parameter laid out
+        // exactly as Win32 PROCESS_MEMORY_COUNTERS expects, and the
+        // current-process pseudo handle is always valid.
+        unsafe {
+            let counters = ProcessMemoryCounters {
+                cb: std::mem::size_of::<ProcessMemoryCounters>() as u32,
+                page_fault_count: 0,
+                peak_working_set_size: 0,
+                working_set_size: 0,
+                quota_peak_paged_pool_usage: 0,
+                quota_paged_pool_usage: 0,
+                quota_peak_non_paged_pool_usage: 0,
+                quota_non_paged_pool_usage: 0,
+                pagefile_usage: 0,
+                peak_pagefile_usage: 0,
+            };
+            // Raw FFI (no winapi dependency here — kernel32 is always
+            // linked on Windows).
+            #[link(name = "kernel32")]
+            unsafe extern "system" fn get_current_process() -> *mut core::ffi::c_void;
+            #[link(name = "kernel32")]
+            unsafe extern "system" fn get_process_memory_info(
+                process: *mut core::ffi::c_void,
+                counters: *mut ProcessMemoryCounters,
+                cb: u32,
+            ) -> i32;
+
+            let mut counters = counters;
+            let ok = get_process_memory_info(
+                get_current_process(),
+                &mut counters,
+                counters.cb,
+            );
+            if ok != 0 {
+                Some(counters.working_set_size as u64)
+            } else {
+                None
+            }
+        }
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     {
         None
     }

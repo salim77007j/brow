@@ -67,6 +67,9 @@ use servo_base::generic_channel::GenericSharedMemory;
 use servo_base::id::{BrowsingContextId, HistoryStateId, PipelineId};
 use servo_config::pref;
 use servo_url::{ImmutableOrigin, ServoUrl};
+// brow (v0.6.1): the CHIPS cookie paths thread the top-level site through as
+// a plain `url::Url` (the type the brow-privacy policy API takes).
+use url::Url;
 use tokio::sync::mpsc::{
     Receiver as TokioReceiver, Sender as TokioSender, UnboundedReceiver, UnboundedSender, channel,
     unbounded_channel,
@@ -354,22 +357,68 @@ pub fn determine_requests_referrer(
 fn set_request_cookies(
     url: &ServoUrl,
     headers: &mut HeaderMap,
-    cookie_jar: &RwLock<CookieStorage>,
+    http_state: &HttpState,
+    site: &Url,
 ) {
-    let mut cookie_jar = cookie_jar.write();
+    let mut cookie_jar = http_state.cookie_jar.write();
     cookie_jar.remove_expired_cookies_for_url(url);
-    if let Some(cookie_list) = cookie_jar.cookies_for_url(url, CookieSource::HTTP) &&
+    // brow (v0.6.1, fix 3.3): CHIPS send policy — first-party cookies are
+    // always included; in third-party contexts unpartitioned cookies are
+    // omitted when `network_privacy_block_third_party_cookies` is on and
+    // partitioned cookies are included only when their partition key
+    // matches the top-level site (v0.6.0 sent every cookie unfiltered).
+    let chips_cfg = http_state.privacy.chips_config();
+    let third_party =
+        brow_privacy::chips::is_third_party(url.host_str().unwrap_or(""), site);
+    let first_party = !third_party;
+    let cookie_list = cookie_jar.cookies_for_url_filtered(url, CookieSource::HTTP, |c| {
+        if first_party {
+            return true;
+        }
+        let stored = brow_privacy::chips::StoredCookie {
+            domain: c.cookie.domain().unwrap_or("").to_owned(),
+            partitioned: c.partition_key.is_some(),
+            partition_key: c.partition_key.clone(),
+        };
+        matches!(
+            brow_privacy::chips::send_policy(&stored, url.as_url(), site, first_party, chips_cfg),
+            brow_privacy::chips::SendVerdict::Include
+        )
+    });
+    if let Some(cookie_list) = cookie_list &&
         let Ok(cookie_list_header_value) = HeaderValue::from_bytes(cookie_list.as_bytes())
     {
         headers.insert(header::COOKIE, cookie_list_header_value);
     }
 }
 
-fn set_cookie_for_url(cookie_jar: &RwLock<CookieStorage>, request: &ServoUrl, cookie_val: &str) {
-    let mut cookie_jar = cookie_jar.write();
+fn set_cookie_for_url(
+    http_state: &HttpState,
+    request: &ServoUrl,
+    cookie_val: &str,
+    site: Option<&Url>,
+) {
     let source = CookieSource::HTTP;
 
-    if let Some(cookie) = ServoCookie::from_cookie_string(cookie_val, request, source) {
+    if let Some(mut cookie) = ServoCookie::from_cookie_string(cookie_val, request, source) {
+        // brow (v0.6.1, fix 3.3): CHIPS receive policy — drop unpartitioned
+        // third-party cookies (pref-gated, default on) and key accepted
+        // `Partitioned` third-party cookies to the top-level site. `site`
+        // is `None` when the caller has no top-level context (defensive).
+        if let Some(site) = site {
+            let partitioned = cookie.cookie.partitioned().unwrap_or(false);
+            let secure = cookie.cookie.secure().unwrap_or(false);
+            match http_state.privacy.cookie_receive_policy(
+                request.host_str().unwrap_or(""),
+                site,
+                partitioned,
+                secure,
+            ) {
+                None => return,
+                Some(partition_key) => cookie.partition_key = partition_key,
+            }
+        }
+        let mut cookie_jar = http_state.cookie_jar.write();
         cookie_jar.push(cookie, request, source);
     }
 }
@@ -377,7 +426,8 @@ fn set_cookie_for_url(cookie_jar: &RwLock<CookieStorage>, request: &ServoUrl, co
 fn set_cookies_from_headers(
     url: &ServoUrl,
     headers: &HeaderMap,
-    cookie_jar: &RwLock<CookieStorage>,
+    http_state: &HttpState,
+    site: Option<&Url>,
 ) {
     for cookie in headers.get_all(header::SET_COOKIE) {
         let cookie_bytes = cookie.as_bytes();
@@ -385,7 +435,7 @@ fn set_cookies_from_headers(
             continue;
         }
         if let Ok(cookie_str) = std::str::from_utf8(cookie_bytes) {
-            set_cookie_for_url(cookie_jar, url, cookie_str);
+            set_cookie_for_url(http_state, url, cookie_str, site);
         }
     }
 }
@@ -1204,6 +1254,25 @@ pub async fn http_redirect_fetch(
         Some(Ok(url)) => url,
     };
 
+    // brow (v0.6.1, fix 3.5): the v0.6.0 privacy filter ran once per fetch
+    // (at `fetch_with_cors_cache`), so a blocked host reached via a 30x hop
+    // was never evaluated. Re-run the filter on every redirect target —
+    // tracker redirects are a standard evasion.
+    if matches!(location_url.scheme(), "http" | "https") {
+        let redirect_url = location_url.clone();
+        if let Some(blocked) = context.state.privacy.check_request(
+            &request.origin,
+            &redirect_url,
+            request.destination,
+        ) {
+            log::info!(
+                "brow privacy: blocked redirect to {location_url} via rule: {}",
+                blocked.rule
+            );
+            return Response::network_error(NetworkError::BlockedByPrivacyFilter);
+        }
+    }
+
     // Step 1 of https://w3c.github.io/resource-timing/#dom-performanceresourcetiming-fetchstart
     // TODO: check origin and timing allow check
     // start_time should equal redirect_start if nonzero; else fetch_start
@@ -1529,10 +1598,15 @@ async fn http_network_or_cache_fetch(
         // Substep 1
         // TODO http://mxr.mozilla.org/servo/source/components/net/http_loader.rs#504
         // XXXManishearth http_loader has block_cookies: support content blocking here too
+        let site = crate::privacy::PrivacyState::site_of(
+            &http_request.origin,
+            current_url.as_url(),
+        );
         set_request_cookies(
             &current_url,
             &mut http_request.headers,
-            &context.state.cookie_jar,
+            &context.state,
+            &site,
         );
         // Substep 2
         if !http_request.headers.contains_key(header::AUTHORIZATION) {
@@ -2489,7 +2563,8 @@ async fn http_network_fetch(
     // TODO this step isn't possible yet
     // Step 15
     if credentials_flag {
-        set_cookies_from_headers(&url, &response.headers, &context.state.cookie_jar);
+        let site = crate::privacy::PrivacyState::site_of(&request.origin, url.as_url());
+        set_cookies_from_headers(&url, &response.headers, &context.state, Some(&site));
     }
     context
         .state

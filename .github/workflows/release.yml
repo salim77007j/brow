@@ -6,8 +6,8 @@ name: brow release
 #   git tag v0.5.0 && git push origin v0.5.0
 #
 # The workflow builds the production-stripped engine profile on both
-# platforms (LTO, codegen-units=1, opt-level="s", strip — the
-# "ultra-lightweight" profile), then produces:
+# platforms (LTO, codegen-units=1, opt-level=3, strip — speed-optimized
+# since the v0.6.1 reassessment), then produces:
 #   * Windows:  brow-<v>-x64.msi (WiX 6), portable zip
 #   * Linux:    AppImage, .deb (nfpm + dpkg cross-check), .rpm (nfpm),
 #               portable tar.gz
@@ -90,17 +90,25 @@ jobs:
 
       - name: Build brow-shell (production-stripped, locked)
         working-directory: servo
-        run: ./mach build --locked --profile production-stripped
+        run: ./mach build --locked --profile production-stripped -p servoshell -p brow-shell
 
       - name: Stage payload
-        # mach build honors default-members = ["ports/servoshell"], so the
-        # produced binary is `servoshell` (not brow-shell). On Linux the
-        # GStreamer/ANGLE libraries are system packages — nothing to bundle.
+        # brow (v0.6.1 reassessment, §0): v0.6.0 shipped default-members
+        # only, so the released `brow` binary was stock servoshell — none of
+        # the brow UI/privacy/memory work was in the payload. The build now
+        # targets BOTH shells; brow-shell is the product (`brow`), servoshell
+        # rides along as `brow-classic` (engineering fallback). mach passes
+        # `-p` through to cargo, so both binaries share one dependency build.
+        # On Linux the GStreamer/ANGLE libraries are system packages —
+        # nothing to bundle.
         run: |
           mkdir -p packaging/payload packaging/dist
-          cp servo/target/production-stripped/servoshell packaging/payload/brow
+          cp servo/target/production-stripped/brow-shell packaging/payload/brow
           strip packaging/payload/brow
+          cp servo/target/production-stripped/servoshell packaging/payload/brow-classic
+          strip packaging/payload/brow-classic
           cp -R servo/resources packaging/payload/resources
+          cp -R servo/ports/brow-shell/assets/fonts packaging/payload/fonts
 
       - name: Portable tarball
         run: |
@@ -261,21 +269,22 @@ jobs:
       - name: Build brow-shell (production-stripped, locked)
         working-directory: servo
         shell: pwsh
-        run: .\mach build --locked --profile production-stripped
+        run: .\mach build --locked --profile production-stripped -p servoshell -p brow-shell
 
       - name: Stage payload
-        # mach build honors default-members = ["ports/servoshell"], so the
-        # produced binary is servoshell.exe (not brow-shell.exe) — the v0.6.0
-        # run #2 failed here on exactly that mismatch. mach post-build also
+        # brow (v0.6.1 reassessment, §0): brow-shell is now the product
+        # binary; servoshell ships as brow-classic.exe. mach post-build
         # copies the curated runtime DLL set (ANGLE, GStreamer libs + plugin
         # subset, MSVC CRT) into the target dir; bundle them too or brow.exe
         # cannot start on machines without GStreamer installed.
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path packaging\payload, packaging\dist | Out-Null
-          Copy-Item servo\target\production-stripped\servoshell.exe packaging\payload\brow.exe
+          Copy-Item servo\target\production-stripped\brow-shell.exe packaging\payload\brow.exe
+          Copy-Item servo\target\production-stripped\servoshell.exe packaging\payload\brow-classic.exe
           Copy-Item servo\target\production-stripped\*.dll packaging\payload
           Copy-Item servo\resources packaging\payload\resources -Recurse
+          Copy-Item servo\ports\brow-shell\assets\fonts packaging\payload\fonts -Recurse
 
       - name: Portable zip
         shell: pwsh

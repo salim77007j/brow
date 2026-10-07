@@ -180,6 +180,8 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["preserve_order"] }
 servo-background-hang-monitor-api = { workspace = true }
 servo-base = { workspace = true }
+# brow (v0.6.1): embedded anti-fingerprinting defense payload generation.
+brow-privacy = { workspace = true }
 servo-bluetooth-traits = { workspace = true, optional = true }
 servo-canvas-traits = { workspace = true }
 servo-config = { workspace = true }

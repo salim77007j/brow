@@ -42,6 +42,16 @@ try {
   Copy-Item (Join-Path $PayloadDir "brow.exe") $inner
   Copy-Item (Join-Path $PayloadDir "resources") $inner -Recurse
 
+  # brow (v0.6.1): the fallback servoshell binary ships as brow-classic.exe
+  # (engineering fallback only), plus the bundled Noto UI fonts (Arabic/RTL
+  # support). Both are optional at package time — but included when staged.
+  if (Test-Path (Join-Path $PayloadDir "brow-classic.exe")) {
+    Copy-Item (Join-Path $PayloadDir "brow-classic.exe") $inner
+  }
+  if (Test-Path (Join-Path $PayloadDir "fonts")) {
+    Copy-Item (Join-Path $PayloadDir "fonts") $inner -Recurse
+  }
+
   # Runtime DLLs staged next to brow.exe by the release workflow (ANGLE,
   # GStreamer libs + plugin subset, MSVC CRT). Without them brow.exe cannot
   # start on machines without GStreamer installed. DLLs are part of the
@@ -65,9 +75,11 @@ try {
 brow $Version — portable build (x86_64-windows)
 ================================================
 
-Run:      brow.exe
-Privacy:  the engine resources (including the EasyList filter set) load
-          from .\resources\ — keep that folder next to brow.exe.
+Run:      brow.exe (brow-classic.exe is the fallback stock-Servo shell)
+Privacy:  the tracker filter (EasyList) is embedded in the engine; an
+          updated list is picked up from .\resources\easylist.txt when
+          present next to brow.exe. UI fonts (Noto Sans + Arabic) install
+          from .\fonts on first run.
 Verify:   check the SHA256SUMS file published next to this zip on the
           release page before extracting.
 Source:   https://github.com/salim77007j/brow

@@ -40,13 +40,38 @@ image = { workspace = true }
 
 [target.'cfg(not(any(target_os = "android", target_env = "ohos")))'.dependencies]
 winit = { workspace = true }
-surfman = { workspace = true, features = ["sm-x11"] }
 raw-window-handle = { workspace = true }
 softbuffer = "0.4.8"
 
-# Engine dependency: the same libservo servoshell embeds.
-servo = { workspace = true, default-features = false, features = ["background_hang_monitor"], optional = true }
+# Engine dependency: the same libservo servoshell embeds — with the SAME
+# feature set (v0.6.1 reassessment, fix 1.4): the previous config dropped
+# `js_jit` (SpiderMonkey ran interpreter-only — an order of magnitude slower)
+# and `bundled` (no embedded resources → the resource reader panics on the
+# first fetch). Feature parity with the shipped servoshell build means the
+# dependency graph is identical and the release build adds only link time.
+servo = { workspace = true, default-features = false, features = [
+    "background_hang_monitor",
+    "bluetooth",
+    "testbinding",
+    "bundled",
+    "js_jit",
+    "clipboard",
+    "brotli-compression-stream",
+    "webcrypto",
+    "webgl",
+    "webgpu",
+    "webxr",
+], optional = true }
 webrender_api = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+# brow (v0.6.1): Windows needs the ANGLE/D3D path (same as servoshell), not
+# the WGL fallback — AMD/iGPU driver compatibility depends on it.
+servo = { workspace = true, optional = true, features = ["no-wgl"] }
+surfman = { workspace = true, features = ["sm-angle-default"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+surfman = { workspace = true, features = ["sm-x11"] }
 
 [package.metadata.deb]
 depends = "$auto"

@@ -219,8 +219,38 @@ impl CookieStorage {
 
     // http://tools.ietf.org/html/rfc6265#section-5.4
     pub fn cookies_for_url(&mut self, url: &ServoUrl, source: CookieSource) -> Option<String> {
+        self.cookies_for_url_filtered(url, source, |_| true)
+    }
+
+    /// brow (v0.6.1, CHIPS send policy): same as [`Self::cookies_for_url`]
+    /// but each stored cookie passes through `filter` before being included
+    /// in the request header. The net stack uses this to omit cookies the
+    /// CHIPS policy excludes (unpartitioned third-party cookies when
+    /// `network_privacy_block_third_party_cookies` is on, partitioned
+    /// cookies whose key does not match the top-level site).
+    pub fn cookies_for_url_filtered(
+        &mut self,
+        url: &ServoUrl,
+        source: CookieSource,
+        filter: impl Fn(&ServoCookie) -> bool,
+    ) -> Option<String> {
         // Let cookie-list be the set of cookies from the cookie store
-        let cookie_list = self.cookies_data_for_url(url, source);
+        let domain = reg_host(url.host_str().unwrap_or(""));
+        let cookies = self.cookies_map.entry(domain).or_default();
+
+        let cookie_list = cookies
+            .iter_mut()
+            .filter(move |c| filter(c))
+            .filter(move |c| c.appropriate_for_url(url, source))
+            .sorted_by(|a: &&mut ServoCookie, b: &&mut ServoCookie| {
+                // The user agent SHOULD sort the cookie-list
+                CookieStorage::cookie_comparator(a, b)
+            })
+            .map(|c| {
+                // Update the last-access-time of each cookie in the cookie-list to the current date and time
+                c.touch();
+                c.cookie.clone()
+            });
 
         let reducer = |acc: String, cookie: Cookie<'static>| -> String {
             // Serialize the cookie-list into a cookie-string by processing each cookie in the cookie-list in order:

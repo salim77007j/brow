@@ -48,6 +48,14 @@ contents:
     dst: /usr/lib/brow/brow
     file_info:
       mode: 0755
+  # brow (v0.6.1): fallback stock-Servo shell + bundled Noto UI fonts
+  # (Arabic/RTL support).
+  - src: packaging/payload/brow-classic
+    dst: /usr/lib/brow/brow-classic
+    file_info:
+      mode: 0755
+  - src: packaging/payload/fonts
+    dst: /usr/lib/brow/fonts
   - src: packaging/payload/resources
     dst: /usr/lib/brow/resources
   - src: packaging/linux/brow.desktop

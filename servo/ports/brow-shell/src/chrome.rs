@@ -62,6 +62,10 @@ pub fn l10n_strings(l: &L10n) -> L10nStrings {
         restore_session: l.tr(Str::RestoreSession).into(),
         dns_over_https: l.tr(Str::DnsOverHttps).into(),
         min_tls: l.tr(Str::MinTlsVersion).into(),
+        // brow (v0.6.1): new privacy settings strings.
+        third_party_cookies: l.tr(Str::ThirdPartyCookies).into(),
+        fingerprint_defense: l.tr(Str::FingerprintDefense).into(),
+        cname_tracking: l.tr(Str::CnameTracking).into(),
     }
 }
 
@@ -81,6 +85,14 @@ pub fn settings_info(l: &L10n, settings: &Settings) -> SettingsInfo {
         dnt: settings.dnt,
         restore_session: settings.restore_session,
         hidden_fps: format!("{}", settings.hidden_webview_fps).into(),
+        // brow (v0.6.1): new privacy settings state.
+        block_third_party_cookies: settings.block_third_party_cookies,
+        block_cname_tracking: settings.block_cname_tracking,
+        fingerprint_label: match settings.fingerprint_defense.as_str() {
+            "off" => "off".into(),
+            "strict" => "strict".into(),
+            _ => "standard".into(),
+        },
     }
 }
 

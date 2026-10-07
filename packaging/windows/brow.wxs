@@ -86,6 +86,12 @@
              Subdirectory="resources" />
       <Files Include="$(env.BROW_PAYLOAD)\*.dll"
              Directory="INSTALLDIR" />
+      <!-- brow (v0.6.1): fallback binary + bundled Noto UI fonts (Arabic). -->
+      <Files Include="$(env.BROW_PAYLOAD)\brow-classic.exe"
+             Directory="INSTALLDIR" />
+      <Files Include="$(env.BROW_PAYLOAD)\fonts\**"
+             Directory="INSTALLDIR"
+             Subdirectory="fonts" />
     </Feature>
 
     <Icon Id="browProduct.ico" SourceFile="$(env.BROW_ICON)" />

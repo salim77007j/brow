@@ -399,6 +399,10 @@ pub struct Preferences {
     /// brow (phase 4): CHIPS — reject `Partitioned` cookies that lack the
     /// `Secure` attribute (draft-ietf-httpbis-rfc6265bis §5.6.3).
     pub network_privacy_chips_require_secure_partitioned: bool,
+    /// brow (v0.6.1): drop unpartitioned third-party cookies on receive and
+    /// omit them from request headers (CHIPS send/receive policy). Sites can
+    /// keep cross-site state only through `Partitioned` cookies.
+    pub network_privacy_block_third_party_cookies: bool,
     /// brow (phase 4): anti-fingerprinting defense level emitted as the
     /// session userscript. One of "off", "standard", "strict".
     pub network_privacy_fingerprint_level: String,
@@ -606,8 +610,10 @@ impl Preferences {
             layout_css_progress_function_enabled: false,
             layout_grid_enabled: true,
             layout_style_sharing_cache_enabled: true,
-            // TODO(mrobinson): This should likely be based on the number of processors.
-            layout_threads: 3,
+            // brow (v0.6.1): raised from 3 — real-world testing showed large
+            // pages starving on the desktop profile. Still modest enough that
+            // memory stays bounded (each thread is a small stack).
+            layout_threads: 6,
             layout_parallelism_job_count_minimum: 4,
             layout_parallelism_job_size_minimum: 16,
             layout_unimplemented: false,
@@ -638,6 +644,11 @@ impl Preferences {
             network_privacy_filter_list_path: String::new(),
             network_privacy_cname_detection_enabled: true,
             network_privacy_chips_require_secure_partitioned: true,
+            // brow (v0.6.1 reassessment): third-party cookie blocking was
+            // hardcoded off (`privacy.rs`), which real-world testing flagged
+            // as a P0 privacy failure. Default it on; the CHIPS partitioned
+            // path keeps cross-site state working for sites that opt in.
+            network_privacy_block_third_party_cookies: true,
             network_privacy_fingerprint_level: String::new(),
             network_tls_min_version: String::new(),
             network_use_webpki_roots: false,

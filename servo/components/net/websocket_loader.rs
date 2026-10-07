@@ -312,6 +312,28 @@ pub(crate) async fn start_websocket(
 ) -> Result<Response, Error> {
     trace!("starting WS connection to {}", client.url());
 
+    // brow (v0.6.1, fix 3.4): WebSockets bypassed the privacy filter
+    // entirely in v0.6.0 — tracker beacons over `wss://` were unfiltered.
+    // Run the same network-filter decision the fetch pipeline uses before
+    // any connection is attempted. The destination maps to SCRIPT (WS
+    // endpoints are script-initiated beacons).
+    if http_state.privacy.filtering_active() {
+        if let Some(blocked) = http_state.privacy.check_request(
+            &client.origin,
+            &client.url(),
+            content_security_policy::Destination::Script,
+        ) {
+            log::info!(
+                "brow privacy: blocked websocket to {} via rule: {}",
+                client.url(),
+                blocked.rule
+            );
+            return Err(Error::Protocol(ProtocolError::InvalidHeader(Box::new(
+                HeaderName::from_static("brow-privacy-blocked"),
+            ))));
+        }
+    }
+
     let initiated_close = Arc::new(AtomicBool::new(false));
     let dom_receiver = setup_dom_listener(dom_action_receiver, initiated_close.clone());
 

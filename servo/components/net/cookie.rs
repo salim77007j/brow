@@ -39,6 +39,12 @@ pub struct ServoCookie {
     pub creation_time: SystemTime,
     pub last_access: SystemTime,
     pub expiry_time: Option<SystemTime>,
+    /// brow (v0.6.1, CHIPS): partition key for third-party `Partitioned`
+    /// cookies (`chips::partition_key(top_site)`). `None` for first-party
+    /// and legacy cookies. `serde(default)` keeps previously persisted
+    /// cookie stores loadable.
+    #[serde(default)]
+    pub partition_key: Option<String>,
 }
 
 impl ServoCookie {
@@ -277,6 +283,7 @@ impl ServoCookie {
             creation_time: SystemTime::now(),
             last_access: SystemTime::now(),
             expiry_time,
+            partition_key: None,
         })
     }
 

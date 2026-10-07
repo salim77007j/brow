@@ -13,7 +13,7 @@
 //! * **CHIPS enforcement** — `Partitioned` requires `Secure` on receive;
 //! * **statistics** — lock-free counters persisted on shutdown.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use net_traits::request::Origin;
@@ -28,15 +28,30 @@ use brow_privacy::cname::{CloakReason, CloakVerdict};
 use brow_privacy::filter::{Decision, FilterEngine};
 use brow_privacy::stats::PrivacyStats;
 
+/// brow (v0.6.1 reassessment, fix 3.1): the filter list is embedded in the
+/// binary as a last-resort fallback. Real-world testing showed the v0.6.0
+/// engine silently disabled filtering in every installed build because the
+/// list was resolved relative to the process CWD, which never matches the
+/// install directory for Start-Menu / .desktop / symlink launches. With the
+/// embedded snapshot (~80k EasyList rules) the engine can no longer no-op
+/// in any packaging mode; file-based lists (pref or exe-relative) take
+/// precedence so updates still work.
+const EMBEDDED_FILTER_LIST: &str =
+    include_str!("../../support/brow-privacy/assets/easylist-snapshot.txt");
+
 pub struct PrivacyState {
     /// Filter engine, built lazily from the configured list; `None` when
-    /// the filter is disabled or no list could be loaded.
+    /// the filter is disabled (the embedded fallback makes "no list found"
+    /// impossible in release builds).
     engine: OnceLock<Option<FilterEngine>>,
     /// Dedicated DoH resolver for CNAME-chain inspection (same config as
     /// the fetch resolver).
     resolver: brow_net_core::dns::DohResolver,
-    /// Session verdict cache: flagged host -> verdict.
-    cloaked_hosts: parking_lot::Mutex<std::collections::HashMap<String, CloakVerdict>>,
+    /// Session verdict cache: flagged host -> verdict. `None` values are
+    /// cached too (v0.6.1): a host checked once and found clean is never
+    /// re-chased, so the DoH chain resolution costs at most one lookup per
+    /// host per session instead of one per connection.
+    cloaked_hosts: parking_lot::Mutex<std::collections::HashMap<String, Option<CloakVerdict>>>,
     stats: PrivacyStats,
     chips: ChipsConfig,
 }
@@ -89,38 +104,67 @@ impl PrivacyState {
                 require_secure_for_partitioned: pref!(
                     network_privacy_chips_require_secure_partitioned
                 ),
-                block_third_party_unpartitioned: false,
+                // brow (v0.6.1, fix 3.3): was hardcoded `false` — the cookie
+                // policy module existed but the "block third-party cookies"
+                // behaviour never ran. Now driven by a real pref (default on).
+                block_third_party_unpartitioned: pref!(
+                    network_privacy_block_third_party_cookies
+                ),
             },
         }
     }
 
-    /// The network filter engine (lazy). `None` = disabled / no list.
+    /// The network filter engine (lazy). `None` = disabled by pref.
     fn engine(&self) -> Option<&FilterEngine> {
         if !pref!(network_privacy_filter_enabled) {
             return None;
         }
         self.engine
             .get_or_init(|| {
-                let path = pref!(network_privacy_filter_list_path);
-                let paths: Vec<PathBuf> = if path.is_empty() {
-                    // default location shipped next to the engine resources
-                    [PathBuf::from("resources/easylist.txt")]
-                        .into_iter()
-                        .collect()
-                } else {
-                    [PathBuf::from(path)].into_iter().collect()
-                };
-                let existing: Vec<&std::path::Path> = paths
+                // brow (v0.6.1, fix 3.1): resolution order — pref path,
+                // exe-relative resources (walk the exe's ancestor dirs the
+                // way servoshell's resource reader does), CWD (dev builds),
+                // embedded snapshot. v0.6.0 only had the CWD entry, which is
+                // why installed builds silently filtered nothing.
+                let mut paths: Vec<PathBuf> = Vec::new();
+                let pref_path = pref!(network_privacy_filter_list_path);
+                if !pref_path.is_empty() {
+                    paths.push(PathBuf::from(pref_path));
+                }
+                if let Ok(exe) = std::env::current_exe() {
+                    if let Some(exe_dir) = exe.parent() {
+                        paths.push(exe_dir.join("resources/easylist.txt"));
+                        if let Some(parent) = exe_dir.parent() {
+                            paths.push(parent.join("resources/easylist.txt"));
+                        }
+                    }
+                }
+                paths.push(PathBuf::from("resources/easylist.txt"));
+                let existing: Vec<&Path> = paths
                     .iter()
                     .filter(|p| p.is_file())
                     .map(|p| p.as_path())
                     .collect();
                 if existing.is_empty() {
-                    log::info!(
-                        "brow privacy: no filter list found at {paths:?}; network \
-                         filtering inactive (CNAME/CHIPS still active)"
-                    );
-                    return None;
+                    match brow_privacy::lists::engine_with_builtin(EMBEDDED_FILTER_LIST, &[]) {
+                        Ok(engine) => {
+                            log::info!(
+                                "brow privacy: no filter list file found at {paths:?}; \
+                                 using embedded EasyList snapshot ({} network rules)",
+                                engine.network_rule_count()
+                            );
+                            return Some(engine);
+                        },
+                        Err(err) => {
+                            // Unreachable in practice (embedded text is valid);
+                            // surface loudly instead of the v0.6.0 silent INFO.
+                            log::warn!(
+                                "brow privacy: embedded filter list failed to parse: {err}; \
+                                 network filtering INACTIVE (CNAME/CHIPS still active)"
+                            );
+                            return None;
+                        },
+                    }
                 }
                 match brow_privacy::lists::engine_from_files(&existing) {
                     Ok(engine) => {
@@ -205,8 +249,19 @@ impl PrivacyState {
     /// CNAME-cloaking inspection, called (awaited) before connecting when
     /// the destination is an https URL. Resolves the chain through DoH and
     /// caches the verdict for the session.
+    ///
+    /// brow (v0.6.1, fix 1.3): two cost/coverage changes vs v0.6.0 —
+    /// (a) the chase only runs when a rules-capable filter engine exists
+    /// (there is no point paying a DoH RTT per host when nothing can act on
+    /// the canonical name), and (b) CLEAN verdicts are cached as well, so
+    /// each host is resolved at most once per session instead of on every
+    /// first connection (v0.6.0 cached only cloaked hosts, taxing every new
+    /// https host with a DoH round-trip even on repeats).
     pub async fn check_cname(&self, request: &ServoUrl) -> Option<CloakVerdict> {
         if !pref!(network_privacy_cname_detection_enabled) {
+            return None;
+        }
+        if self.engine().is_none() {
             return None;
         }
         let host = request.host_str()?.to_ascii_lowercase();
@@ -214,24 +269,32 @@ impl PrivacyState {
             return None;
         }
         if let Some(verdict) = self.cloaked_hosts.lock().get(&host) {
-            return Some(verdict.clone());
+            return verdict.clone();
         }
 
-        let chain = self.resolver.resolve_cname_chain(&host).await.ok()?;
+        let resolved = self.resolve_cloak_verdict(&host).await;
+        self.cloaked_hosts.lock().insert(host, resolved.clone());
+        resolved
+    }
+
+    /// Resolve the cloak verdict for one host (uncached). `None` = clean or
+    /// unresolvable (treated as clean — availability over strictness).
+    async fn resolve_cloak_verdict(&self, host: &str) -> Option<CloakVerdict> {
+        let chain = self.resolver.resolve_cname_chain(host).await.ok()?;
         let canonical = chain.last()?.clone();
         if canonical == host {
             return None;
         }
         // Cloaking signature: the canonical name lands on a different
         // registrable domain than the client-visible host.
-        let visible_reg = brow_privacy::cname::registrable_suffix(&host);
+        let visible_reg = brow_privacy::cname::registrable_suffix(host);
         let canonical_reg = brow_privacy::cname::registrable_suffix(&canonical);
         if visible_reg == canonical_reg {
             return None;
         }
         let verdict = CloakVerdict {
             reason: CloakReason::CrossDomainAlias {
-                visible: host.clone(),
+                visible: host.to_owned(),
                 canonical,
             },
             hops: chain.len(),
@@ -240,9 +303,6 @@ impl PrivacyState {
             .record_cname(match &verdict.reason {
                 CloakReason::CrossDomainAlias { canonical, .. } => canonical,
             });
-        self.cloaked_hosts
-            .lock()
-            .insert(host, verdict.clone());
         Some(verdict)
     }
 
@@ -256,6 +316,65 @@ impl PrivacyState {
             return false;
         }
         true
+    }
+
+    /// brow (v0.6.1, fix 3.3): full CHIPS receive policy for one cookie.
+    ///
+    /// Returns `None` when the cookie must be dropped, or `Some(partition)`
+    /// with the partition key to store on the cookie:
+    /// * first-party cookies are always accepted unpartitioned;
+    /// * third-party `Partitioned` cookies are accepted (when `Secure`, per
+    ///   the attribute gate) and keyed to the top-level site;
+    /// * third-party unpartitioned cookies are dropped when the
+    ///   `network_privacy_block_third_party_cookies` pref is on (default).
+    pub fn cookie_receive_policy(
+        &self,
+        request_host: &str,
+        top_site: &Url,
+        partitioned: bool,
+        secure: bool,
+    ) -> Option<Option<String>> {
+        if !self.chips_receive_allowed_attrs(partitioned, secure) {
+            return None;
+        }
+        let third_party =
+            brow_privacy::chips::is_third_party(request_host, top_site);
+        if !third_party {
+            return Some(None);
+        }
+        if partitioned {
+            let key = brow_privacy::chips::partition_key(top_site);
+            Some(Some(key))
+        } else if pref!(network_privacy_block_third_party_cookies) {
+            self.stats.record_cookie_rejected();
+            log::info!(
+                "brow privacy: dropped unpartitioned third-party cookie for {request_host} \
+                 (site {top_site})"
+            );
+            None
+        } else {
+            Some(None)
+        }
+    }
+
+    /// The CHIPS send-side config (drive `chips::send_policy` from the
+    /// cookie header path). Read live from prefs so the settings panel's
+    /// toggles apply without an engine restart.
+    pub fn chips_config(&self) -> ChipsConfig {
+        ChipsConfig {
+            require_secure_for_partitioned: pref!(
+                network_privacy_chips_require_secure_partitioned
+            ),
+            block_third_party_unpartitioned: pref!(
+                network_privacy_block_third_party_cookies
+            ),
+        }
+    }
+
+    /// Whether the filter engine is active (rules loaded). Used by the
+    /// WebSocket loader to skip the gate cheaply when filtering is off.
+    pub fn filtering_active(&self) -> bool {
+        self.engine().is_some()
     }
 
     pub fn persist(&self) {

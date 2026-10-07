@@ -59,6 +59,13 @@ mkdir -p "$APPDIR/usr/lib/brow" "$APPDIR/usr/bin" \
 
 install -m 0755 "$PAYLOAD_DIR/brow" "$APPDIR/usr/lib/brow/brow"
 cp -R "$PAYLOAD_DIR/resources" "$APPDIR/usr/lib/brow/resources"
+# brow (v0.6.1): fallback binary + bundled Noto UI fonts (Arabic).
+if [[ -f "$PAYLOAD_DIR/brow-classic" ]]; then
+  install -m 0755 "$PAYLOAD_DIR/brow-classic" "$APPDIR/usr/lib/brow/brow-classic"
+fi
+if [[ -d "$PAYLOAD_DIR/fonts" ]]; then
+  cp -R "$PAYLOAD_DIR/fonts" "$APPDIR/usr/lib/brow/fonts"
+fi
 ln -s ../lib/brow/brow "$APPDIR/usr/bin/brow"
 
 install -m 0644 "$SCRIPT_DIR/brow.desktop" "$APPDIR/usr/share/applications/brow.desktop"

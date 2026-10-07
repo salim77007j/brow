@@ -86,6 +86,15 @@ pub struct Settings {
     pub restore_session: bool,
     /// Send Do-Not-Track header.
     pub dnt: bool,
+    /// brow (v0.6.1): block unpartitioned third-party cookies (CHIPS).
+    /// Default true — v0.6.0 shipped this hardcoded off and real-world
+    /// testing flagged third-party tracking cookies as a P0 failure.
+    pub block_third_party_cookies: bool,
+    /// brow (v0.6.1): anti-fingerprinting defense level
+    /// ("off" | "standard" | "strict").
+    pub fingerprint_defense: String,
+    /// brow (v0.6.1): CNAME-cloaking (disguised tracker) detection.
+    pub block_cname_tracking: bool,
 }
 
 impl Default for Settings {
@@ -106,6 +115,9 @@ impl Default for Settings {
             downloads_dir: PathBuf::from("."),
             restore_session: true,
             dnt: false,
+            block_third_party_cookies: true,
+            fingerprint_defense: String::from("standard"),
+            block_cname_tracking: true,
         }
     }
 }
@@ -221,6 +233,14 @@ impl Settings {
             }
             "restore_session" => self.restore_session = parse_bool(value).ok_or_else(|| invalid("expected true|false"))?,
             "dnt" => self.dnt = parse_bool(value).ok_or_else(|| invalid("expected true|false"))?,
+            "block_third_party_cookies" => self.block_third_party_cookies = parse_bool(value).ok_or_else(|| invalid("expected true|false"))?,
+            "block_cname_tracking" => self.block_cname_tracking = parse_bool(value).ok_or_else(|| invalid("expected true|false"))?,
+            "fingerprint_defense" => {
+                if !matches!(value, "off" | "standard" | "strict") {
+                    return Err(invalid("expected off|standard|strict"));
+                }
+                self.fingerprint_defense = value.to_string();
+            }
             _ => return Err(SettingsError::UnknownKey(key.to_string())),
         }
         Ok(())
