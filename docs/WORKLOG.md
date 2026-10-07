@@ -295,3 +295,37 @@ single-window/IME/fonts/PGO before the rebuild phases commit to designs.
 
 **VERIFIED.** Sources listed inline in §8; research JSON snapshots retained in
 the sandbox (not committed — links are the durable record).
+
+---
+
+## 2026-10-08 · Phase 1.9 · E-001 round-2 partial results archived — PHASE 1 CLOSE
+
+**WHAT.**
+- Round-2 matrix (fixed harness) collected 3/5 verdicts: **o3-nolto PASS,
+  o3-thin PASS, o3-fat-mozjsO1 PASS** (all alive through the 150 s wikipedia
+  window on CI). No SIGSEGV, no panic, no clean early exit in any completed
+  variant.
+- s-control and o3-fat-repro are stuck in `mach bootstrap` on their GHA
+  runners (>110 min vs ~9 min in round 1) — infrastructure flake, not brow
+  code. Run left alive (330-min job timeouts); verdicts appended to
+  docs/EXPERIMENTS.md when they land (Phase 2 start check, PROCESS §6.3).
+- R-01 status → IN-PROGRESS with the D-007 protocol spelled out: no bisect
+  conclusion until o3-fat-repro renders; PASS → repro moves to owner
+  hardware; CRASH → fat-LTO implicated, Phase 4 proceeds with the fallback
+  ladder (o3-thin / mozjsO1 data as inputs).
+
+**WHY.** Owner rule: every phase closes with evidence recorded and risks
+updated, even when a heavy job is still in flight — the collection protocol
+and anchor rule make the in-flight state unambiguous.
+
+**VERIFIED.** Job conclusions + timestamps read from the GitHub API; the
+three verdicts are green jobs under the fixed harness (verdict-emitting code
+reviewed in EXPERIMENTS.md round-2 notes).
+
+**Phase 1 close state.** 1.1 environment re-verify ✓ · 1.2 ten-site
+profiling ✓ · 1.3 servoshell blueprint + V2_PLAN ✓ · 1.4 E-001 dispatched ✓ ·
+1.5 gate calibration + risk refresh ✓ · 1.6 branch-discipline correction ✓ ·
+1.7 session re-entry + harness audit + RSS guardrail fix + E-001 round-2
+dispatch ✓ · 1.8 competitor practice research (V2_PLAN §8) ✓ · 1.9 round-2
+partial archive + close ✓. Research-only phase: no product code changed on
+`v0.7-rebuild` (only CI gate hardening c362e09da, which is infrastructure).

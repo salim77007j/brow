@@ -71,3 +71,33 @@ experiment; update the Status line in place as results land, never rewrite histo
 | s-control | ... | ... |
 Conclusion: ...
 -->
+
+### Round 2 — partial (3/5 verdicts; anchors pending on a stuck GHA runner)
+
+Run [37678828465](https://github.com/salim77007j/brow/actions/runs/37678828465),
+dispatched 2026-10-08 20:01 UTC with the fixed harness.
+
+| Variant | Verdict | Evidence |
+|---|---|---|
+| o3-nolto (O3, no LTO, 16 CGU) | **PASS(alive 150s)** — job green | completed 20:27:40Z |
+| o3-thin (O3, thin LTO, 1 CGU) | **PASS(alive 150s)** — job green | completed 20:40:17Z |
+| o3-fat-mozjsO1 (O3, fat LTO, mozjs at O1) | **PASS(alive 150s)** — job green | completed 20:57:04Z |
+| s-control | *pending* | stuck >110 min in `mach bootstrap` (GHA infra flake, not brow code — same step took ~9 min in round 1) |
+| o3-fat-repro | *pending* | same |
+
+- With the fixed harness, a green job **is** a rendered verdict: alive through
+  the 150 s window, with load markers and log tail now emitted on every path.
+- **No conclusion yet, by design (D-007).** The decision-bearing observations
+  so far: the default release config (o3-nolto), the upstream-like middle
+  point (o3-thin), and the mozjs-deoptimized fat config all stay up on CI —
+  consistent with the hypothesis that fat-LTO×O3 is the suspect, but the
+  `o3-fat-repro` anchor has not rendered its verdict, so nothing above may be
+  read as a bisect result.
+- **Collection protocol:** the run is left alive; the two stuck jobs have a
+  330-min timeout. Their verdicts are appended to this table when they land
+  (checked at Phase 2 start, PROCESS §6.3). If `o3-fat-repro` completes PASS:
+  the crash does not reproduce under CI software-GL, and per D-007 the repro
+  moves to owner hardware before any codegen change is proposed. If it
+  completes CRASH: the matrix is fully trusted, and the Phase 4 profile fix
+  proceeds on the fat-LTO implication with the o3-thin/mozjsO1 data as the
+  fallback ladder inputs.
