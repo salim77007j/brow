@@ -211,3 +211,27 @@ be updated at every phase end (owner rule 0.10), including retiring phantoms.
 committed evidence; decision entries follow the template with rejected
 alternatives and accepted risks.
 
+---
+
+## 2026-10-08 · Phase 1.6 · Process slip corrected (wrong-branch push)
+
+**WHAT.**
+- The four Phase 1 research commits were first pushed to
+  `experiment/o2o3-codegen` by mistake (the checkout was still on the
+  experiment branch after dispatching E-001 — the working tree never left
+  `v0.7-rebuild`'s content, only the ref was wrong).
+- Correction: cherry-picked all four onto `v0.7-rebuild`
+  (`573bc2e93`..`adf958dd5`, pushed); force-reset `experiment/o2o3-codegen`
+  back to its workflow-only commit `421c9110e`. No content difference existed
+  between the two states — the experiment branch now contains ONLY the
+  experiment workflow, as PROCESS 0.5 requires.
+
+**WHY.** Change isolation (owner rule 0.4): experiment branches must never
+carry mainline research/docs; any fix landing on `v0.7-rebuild` must go
+through its own verified commits.
+
+**VERIFIED.** `git ls-remote`: `experiment/o2o3-codegen = 421c9110e`
+(workflow only), `v0.7-rebuild = adf958dd5`. Cherry-pick produced identical
+trees (same file contents, new shas). Lesson recorded: after creating an
+experiment branch, immediately switch back or open a worktree.
+
