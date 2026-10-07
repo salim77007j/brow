@@ -11,10 +11,17 @@ build = "build.rs"
 ui = "Slint 1.17 software renderer (headless-friendly, no GL required for chrome); 1.18+ blocked by mozjs icu_collections ~2.1 pin"
 
 [features]
-default = ["brow-allocator-mimalloc", "engine"]
-# Use mimalloc as the global allocator (Phase 3 resource strategy: tighter
-# size classes → lower RSS). jemalloc stays available in servoshell for
-# comparison builds.
+# brow (v0.6.1): default allocator is jemalloc — the path every shipped
+# binary (v0.6.0 servoshell) has used, verified to run on Linux CI, this
+# test harness and the tester's Windows machine. mimalloc v3.3.2 segfaulted
+# at engine init in the same environment ("memory allocation of 512 bytes
+# failed" right after mimalloc reserved 1 GiB), so the phase-3 mimalloc
+# default is demoted to an opt-in comparison feature. Re-enable it only
+# with a runtime A/B on real machines.
+default = ["servo-allocator/use-jemalloc", "engine"]
+# Opt-in: mimalloc as the global allocator (phase-3 experiment; tighter
+# size classes were expected to lower RSS, but it must be validated at
+# runtime before it can be a default again).
 brow-allocator-mimalloc = ["servo-allocator/use-mimalloc"]
 # Embed the Servo engine (content windows, WebView delegates). Turning this
 # off compiles only the Slint chrome stack for headless UI verification —
