@@ -111,7 +111,7 @@ jobs:
             echo "CARGO_PROFILE_PRODUCTION_PACKAGE_MOZJS_OPT_LEVEL=1" >> "$GITHUB_ENV"
             echo "CARGO_PROFILE_PRODUCTION_PACKAGE_MOZJS_SYS_OPT_LEVEL=1" >> "$GITHUB_ENV"
           fi
-          echo "variant=${{ matrix.id }} opt=${{ matrix.opt_level }} lto=${{ matrix.lto:-fat(inherited)}} cgu=${{ matrix.cgu:-1(inherited)}} mozjsO1=${{ matrix.mozjs_o1 }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "variant=${{ matrix.id }} opt=${{ matrix.opt_level }} lto=${{ matrix.lto || 'fat(inherited)' }} cgu=${{ matrix.cgu || '1(inherited)' }} mozjsO1=${{ matrix.mozjs_o1 }}" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Build brow-shell under production profile
         run: |
