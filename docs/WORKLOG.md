@@ -92,3 +92,122 @@ R-07 (CI cost) → **MITIGATED** (concurrency + fast-gates-first observed
 working). Next phase entry updates both in `docs/RISKS.md` at Phase 1 close.
 
 
+---
+
+## 2026-10-08 · Phase 1.1 · Environment re-verified + first gated run reviewed
+
+**WHAT.**
+- Sandbox was reset between sessions: restored git credentials (file outside
+  the repo, mode 600), fresh-cloned `v0.7-rebuild`, verified
+  `HEAD == origin/v0.7-rebuild == b6ee2f48e`; `v0.6.1-safe` tag confirmed on
+  remote; local worklog re-read as the re-entry point (PROCESS 0.1).
+- Reviewed the Phase 0 gated run `37652829943` @ `b6ee2f48e` (as pre-agreed at
+  Phase 0 close): all five fast gates **green** (brow-privacy EasyList/CHIPS
+  suite, clippy+fmt, brow-shell compile check, brow-net-core, brow-shell-core
+  cache/resbench); Linux engine build **green** with **stripped release
+  brow-shell = 147 MiB** (gate 200); Windows engine build still in progress
+  (~1 h elapsed, within its 3–5 h budget). A superseded run (`37652133060`)
+  was auto-cancelled by the concurrency group — working as designed.
+- Observed (not acted on): a `brow release` run on `main` (`37651149310`,
+  triggered at Phase 0 setup) has a Linux packaging failure (22 s) — noted for
+  the Phase 6 packaging work; `main` is frozen, no action on the branch.
+
+**WHY.** Owner rules: verify the environment after any reset; review heavy-gate
+evidence before building on it (PROCESS 0.8); record baselines with evidence.
+
+**VERIFIED.** `git ls-remote` vs `git rev-parse` match; job conclusions read
+from the GitHub API; size line taken from the job log (`147 MiB (gate 200)`).
+
+---
+
+## 2026-10-08 · Phase 1.2 · 10-site v0.6.1 profiling (evidence in repo)
+
+**WHAT.**
+- Profiled the released v0.6.1 Linux binary on 10 real sites (example.com,
+  wikipedia article, HN, docs.rs, github, MDN, BBC, old.reddit, x.com,
+  youtube) under Xvfb + software GL: fresh profile per site, process-tree RSS
+  at 200 ms, screenshots t25/t50, fixed dwell.
+- Evidence + verdict table + caveats: `docs/evidence/phase1-site-profiling/`.
+
+**Key findings.** Zero crashes on all 10 (shipped opt-"s" is stable). GitHub,
+BBC, Wikipedia, MDN, docs.rs, HN render usable-to-excellent layouts — the
+product failure is the *shell*, not these pages. CJK renders as tofu (no font
+bundle); icon fonts render as solid black squares (MDN everywhere) — real
+bug, re-scoped R-09. old.reddit server-blocks the Servo UA → R-14 (UA policy).
+Tree RSS 270–615 MB/tab → R-06 baseline updated.
+**Phantom avoided:** the "×" glyph on many screenshots is the X11 root cursor
+(explained in the evidence README) — not a browser bug; would have wasted
+Phase 4 effort.
+
+**VERIFIED.** Harness `scripts/profile_sites.py` (sandbox); per-site
+`result.json` committed; screenshots visually inspected, not assumed.
+
+---
+
+## 2026-10-08 · Phase 1.3 · servoshell blueprint fully read → docs/V2_PLAN.md
+
+**WHAT.**
+- Complete read of the in-tree single-window pattern:
+  `desktop/app.rs` (winit 0.30 ApplicationHandler, ControlFlow::Wait),
+  `desktop/headed_window.rs` (1358 lines: WindowRenderingContext +
+  OffscreenRenderingContext compositing, full input routing, IME
+  Enabled/Preedit/Commit/Disabled → CompositionEvent, ScaleFactorChanged
+  handling, embedder controls, dialogs), `desktop/gui.rs` (EguiGlow chrome;
+  webview composited via background-layer PaintCallback — GPU blit, no CPU
+  path), `desktop/event_loop.rs`.
+- Wrote `docs/V2_PLAN.md`: root causes A/B/C with evidence links, the §3
+  blueprint (window/rendering, input, IME, DPI, what brow adds), the E-001
+  bisect design + fallback ladder, target metrics + measurement methods,
+  phase order, open questions. No product code changed (Phase 1 is research).
+
+**WHY.** Phase 2 rebuilds the product shell on this exact pattern; the plan
+must be specific enough that Phase 2/3/4 work items cite file-level evidence.
+
+**VERIFIED.** All claims cite read source lines (file:line references in the
+plan) or committed evidence directories.
+
+---
+
+## 2026-10-08 · Phase 1.4 · E-001 codegen bisect dispatched (experiment branch)
+
+**WHAT.**
+- Created `experiment/o2o3-codegen` (PROCESS 0.5: experiments live on
+  dedicated branches, never main/`v0.7-rebuild`) with
+  `experiment-codegen-matrix.yml`: 5 matrix variants building brow-shell
+  under `[profile.production]` with single-knob CARGO_PROFILE_* overrides
+  (s-control / o3-fat-repro / o3-nolto / o3-thin / o3-fat-mozjsO1), each
+  loading the wikipedia repro under Xvfb + software GL; verdicts +
+  crash logs to job summary and artifacts.
+- Run [37660240086] dispatched (5 jobs building). First attempt (37660103020)
+  failed at workflow-parse (invalid GH expression) — fixed and recorded in
+  `docs/EXPERIMENTS.md` E-001.
+
+**WHY.** R-01 is the single largest known performance blocker (forced
+opt-level="s" for v0.6.x). The default release profile (O3, no LTO) building
+green + Firefox/Chrome shipping ThinLTO-class LTO makes fat-LTO×O3 the prime
+suspect; the matrix answers it in one parallel round.
+
+**VERIFIED.** D-007 anchor rule recorded before results exist: no variant
+verdict is trusted unless s-control PASSES and o3-fat-repro CRASHES; results
+land in `docs/EXPERIMENTS.md` before any fix reaches `v0.7-rebuild`.
+
+---
+
+## 2026-10-08 · Phase 1.5 · Gate tightened on measured baseline (D-006) + risk register refresh
+
+**WHAT.**
+- `SIZE_GATE_MIB` 200 → 160 in `ci.yml` (measured 147 MiB baseline, D-006).
+- `docs/RISKS.md`: R-09 re-scoped (icon-font glyph failure; × phantom
+  resolved), R-05 updated (Slint concern dissolved by the egui/winit IME
+  path; new risk = winit IME unvalidated on owner hardware), R-06 baseline
+  updated (270–615 MB), new R-13 (bisect reproducibility — MITIGATED by the
+  D-007 anchor rule), new R-14 (UA blocking — OPEN, Phase 4).
+- `docs/DECISIONS.md`: D-006, D-007 appended.
+
+**WHY.** D-004 promised tightening once the real baseline existed; risks must
+be updated at every phase end (owner rule 0.10), including retiring phantoms.
+
+**VERIFIED.** Gate value grep-verified in `ci.yml`; all risk rows cite
+committed evidence; decision entries follow the template with rejected
+alternatives and accepted risks.
+
