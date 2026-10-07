@@ -260,11 +260,17 @@ jobs:
             fi
             sleep 1
           done
-          RSS_KB=$(awk '/VmRSS/{print $2}' "/proc/$PID/status" 2>/dev/null || echo 0)
+          # RSS must be sampled from the BROWSER process, not the timeout(1)
+          # wrapper: /proc/$PID is timeout's own ~2 MB VmRSS, which made this
+          # 600 MB guardrail decorative since Phase 0. pgrep -x matches the
+          # real engine process (comm "brow-shell"); the timeout/xvfb-run
+          # wrappers do not collide with -x.
+          BS_PID=$(pgrep -x brow-shell 2>/dev/null | head -1)
+          RSS_KB=$(awk '/VmRSS/{print $2}' "/proc/${BS_PID:-0}/status" 2>/dev/null || echo 0)
           ALIVE=$(kill -0 "$PID" 2>/dev/null && echo yes || echo no)
           kill "$PID" 2>/dev/null || true
           pkill -f 'target/release/brow-shell' 2>/dev/null || true
-          echo "brow-shell smoke: signals=$SIGNALS alive=$ALIVE rss_kb=$RSS_KB" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "brow-shell smoke: signals=$SIGNALS alive=$ALIVE bs_pid=${BS_PID:-none} rss_kb=$RSS_KB" | tee -a "$GITHUB_STEP_SUMMARY"
           if [ "$SIGNALS" != "1" ]; then
             echo "::error::brow-shell smoke FAILED (engine signals absent)"
             tail -40 "$RUNNER_TEMP/brow-shell-smoke.log"
