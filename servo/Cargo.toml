@@ -434,22 +434,29 @@ incremental = true
 debug = "line-tables-only"
 
 # brow (v0.6.1 reassessment, fix 1.1): the shipped profile previously used
-# opt-level="s" (optimize for size) — real-world testing showed page loads
-# far slower than every other browser. Speed is now the optimization target.
+# opt-level="s" — real-world testing showed page loads far slower than every
+# other browser, so the intent was opt-level 3 (then 2).
 #
-# opt-level=2, NOT 3: the first opt-3 build segfaulted (SIGSEGV, Script
-# thread) on https://www.wikipedia.org while the same binary completes
-# example.com — reproducible across runs, absent in the identical code at
-# opt-level="s" (v0.6.0 binary). A miscompile/UB exposure in the vendored
-# engine at O3 is the prime suspect; O2 keeps the hot-loop wins over "s"
-# and is upstream Servo's sanitizer/CI grade. Revisit O3 (+PGO) in v0.6.2
-# with a minimized crash case.
+# v0.6.1 experiment log: opt-3 AND opt-2 builds both segfault (SIGSEGV,
+# Script thread) on https://www.wikipedia.org ~0.5-1 s in, reproducible,
+# while the same binary completes example.com / github-crawl pages. The
+# crash persists with EVERY brow privacy feature disabled via prefs
+# (filter engine off, fingerprint defense off, CNAME off, 3p-cookies off)
+# and with layout_threads pinned back to 3 — so it is not the brow code.
+# It is also absent in the v0.6.0 binary, which is the same vendored engine
+# built at opt-level="s".
+#
+# Decision for v0.6.1: keep the codegen identical to the proven v0.6.0
+# ("s") so the release ships the privacy/UI/memory fixes on a known-good
+# optimizer configuration. The O2/O3 codegen issue is isolated to a
+# wikipedia.org reproducible case and goes to the v0.6.2 board with the
+# PGO work (both need a proper build-time investigation).
 [profile.production]
 inherits = "release"
 debug-assertions = false
 lto = true
 codegen-units = 1
-opt-level = 2
+opt-level = "s"
 
 [profile.production-stripped]
 inherits = "production"
