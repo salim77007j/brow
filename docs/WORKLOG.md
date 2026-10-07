@@ -329,3 +329,23 @@ profiling ✓ · 1.3 servoshell blueprint + V2_PLAN ✓ · 1.4 E-001 dispatched 
 dispatch ✓ · 1.8 competitor practice research (V2_PLAN §8) ✓ · 1.9 round-2
 partial archive + close ✓. Research-only phase: no product code changed on
 `v0.7-rebuild` (only CI gate hardening c362e09da, which is infrastructure).
+
+---
+
+## 2026-10-08 · Phase 1.10 · Post-close gate evidence: 7/7 green + first real RSS number
+
+**WHAT.**
+- The gated CI run on `ec71c53de` (37679599883) completed **7/7 green**:
+  all five fast gates, Linux engine build (green, size 147 MiB vs 160 gate),
+  Windows engine build (green).
+- The hardened product smoke produced the first REAL memory reading:
+  `brow-shell smoke: signals=1 alive=yes bs_pid=61708 rss_kb=346028` —
+  **338 MiB** on example.com under software GL, measured from the actual
+  browser process (D-008 form), under the 600 MB guardrail.
+- Cross-check: REASSESSMENT_REPORT's harness baseline for v0.6.1 was
+  218–343 MB/page — the corrected guardrail number sits inside that band, so
+  no memory regression signal from the CI-side measurement (real-GPU owner
+  numbers remain the Phase 4 truth source).
+
+**VERIFIED.** Values read from the job log of run 37679599883 (Linux job) via
+the API; `bs_pid` present proves the D-008 sampling form is live.
