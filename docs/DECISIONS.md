@@ -98,6 +98,16 @@ releases with no decision record).
 **Risks accepted.** A legitimately large feature may require re-negotiating
 the gate via a DECISIONS entry — that friction is intentional.
 
+**Amendment (2026-10-08, same day).** The CI size gate measures the stripped
+**default-`release`** profile (what the every-push CI job builds), not
+`production-stripped` (the shipped profile). The release-profile baseline was
+unknown at gate-writing time, so the initial value is set to **200 MiB**
+(deliberately loose, blind calibration) and the gate step prints the actual
+size into the job summary on every run. Phase 1 records the real baseline and
+tightens the gate; the amendment avoids blocking all work on a guessed number
+while still catching gross bloat. Gate source of truth: `SIZE_GATE_MIB` in
+`.github/workflows/ci.yml`.
+
 ---
 
 ## D-005 — Windows full-engine build gates every push (cost accepted)

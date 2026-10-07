@@ -2,9 +2,16 @@ name: brow CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, v0.7-rebuild]
   pull_request:
   workflow_dispatch:
+
+# Phase 0 (owner directive 0.7): per-ref concurrency — a newer push to the
+# same branch supersedes its queued run instead of piling up multi-hour
+# engine builds (see docs/DECISIONS.md D-005).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -163,7 +170,9 @@ jobs:
     name: Build Servo from source (Linux x86_64, release)
     runs-on: ubuntu-24.04
     timeout-minutes: 330
-    needs: [brow-net-core]
+    # Phase 0: fast gates run first so a trivial failure never burns a
+    # multi-hour engine build.
+    needs: [brow-net-core, brow-chrome-core, brow-privacy, brow-lints]
     steps:
       - name: Checkout brow (with vendored servo/)
         uses: actions/checkout@v4
@@ -196,6 +205,75 @@ jobs:
         run: |
           cd servo
           ./mach build --release
+
+      - name: Build brow-shell (product binary, shares the dependency build)
+        # Phase 0 gate (mirrors release.yml's matching step): mach cannot take
+        # a second -p, so brow-shell is built directly with cargo from the
+        # workspace root — same toolchain, same target dir, whole dependency
+        # graph reused; only brow-shell itself compiles.
+        run: |
+          cd servo
+          cargo build --locked --release -p brow-shell || cargo build --release -p brow-shell
+
+      - name: Quality gate — binary size (DECISIONS D-004)
+        # Gate applies to the stripped default-`release` profile (what this
+        # job builds), measured identically on every push. 200 MiB is a
+        # deliberately loose initial value (calibrated blind); Phase 1 records
+        # the real baseline and tightens it — see the D-004 amendment.
+        run: |
+          cd servo
+          SIZE_GATE_MIB=200
+          cp target/release/brow-shell "$RUNNER_TEMP/brow-sizecheck"
+          strip "$RUNNER_TEMP/brow-sizecheck"
+          BYTES=$(stat -c%s "$RUNNER_TEMP/brow-sizecheck")
+          ACTUAL_MIB=$((BYTES / 1024 / 1024))
+          echo "brow-shell (stripped, release): ${ACTUAL_MIB} MiB (gate ${SIZE_GATE_MIB} MiB)" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$ACTUAL_MIB" -gt "$SIZE_GATE_MIB" ]; then
+            echo "::error::binary size gate FAILED: ${ACTUAL_MIB} MiB > ${SIZE_GATE_MIB} MiB"
+            exit 1
+          fi
+
+      - name: Smoke test — brow-shell (product shell) headless engine signals
+        # Deterministic pass/fail: under Xvfb the product shell must (a) stay
+        # alive, (b) load the privacy filter engine, (c) reach document parse
+        # (fingerprint defenses activate on every document). RSS is sampled as
+        # a 600 MB guardrail only — the real <200 MB/tab target is Phase 4
+        # work and software-GL CI numbers are not comparable to real GPUs.
+        run: |
+          cd servo
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-brow"; mkdir -p "$XDG_RUNTIME_DIR"
+          if [ -f /usr/share/glvnd/egl_vendor.d/50_mesa.json ]; then
+            export __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json
+          fi
+          export BROW_DATA_DIR="$RUNNER_TEMP/brow-data"; mkdir -p "$BROW_DATA_DIR"
+          printf '{"home_page": "https://example.com", "block_ads": true}\n' > "$BROW_DATA_DIR/settings.json"
+          RUST_LOG=info timeout 90 xvfb-run -a -s "-screen 0 1280x800x24" \
+            target/release/brow-shell > "$RUNNER_TEMP/brow-shell-smoke.log" 2>&1 &
+          PID=$!
+          SIGNALS=0
+          for i in $(seq 1 80); do
+            kill -0 "$PID" 2>/dev/null || break
+            if grep -q "filter engine loaded" "$RUNNER_TEMP/brow-shell-smoke.log" && \
+               grep -q "fingerprint defenses active" "$RUNNER_TEMP/brow-shell-smoke.log"; then
+              SIGNALS=1; break
+            fi
+            sleep 1
+          done
+          RSS_KB=$(awk '/VmRSS/{print $2}' "/proc/$PID/status" 2>/dev/null || echo 0)
+          ALIVE=$(kill -0 "$PID" 2>/dev/null && echo yes || echo no)
+          kill "$PID" 2>/dev/null || true
+          pkill -f 'target/release/brow-shell' 2>/dev/null || true
+          echo "brow-shell smoke: signals=$SIGNALS alive=$ALIVE rss_kb=$RSS_KB" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$SIGNALS" != "1" ]; then
+            echo "::error::brow-shell smoke FAILED (engine signals absent)"
+            tail -40 "$RUNNER_TEMP/brow-shell-smoke.log"
+            exit 1
+          fi
+          if [ "$RSS_KB" -gt 614400 ]; then
+            echo "::error::RSS guardrail FAILED: ${RSS_KB} KB > 600 MB"
+            exit 1
+          fi
 
       - name: Smoke test — binary runs
         # The workspace's default member is ports/servoshell; its binary is
@@ -240,3 +318,64 @@ jobs:
           name: brow-servo-linux-x86_64
           path: ${{ runner.temp }}/brow-servo-linux-x86_64.tar.gz
           retention-days: 14
+
+  # Phase 0 (owner directive 0.7, DECISIONS D-005): Windows must compile on
+  # every push. The v0.6.x failure class (Windows-only FFI/allocator/GPU
+  # defects) reached released builds because Windows compiled only at tag
+  # time. This job replicates release.yml's build recipe minus packaging.
+  build-servo-windows:
+    name: Build Servo + brow-shell (Windows x86_64, release)
+    runs-on: windows-2022
+    timeout-minutes: 330
+    needs: [brow-net-core, brow-chrome-core, brow-privacy]
+    steps:
+      - name: Checkout brow (with vendored servo/)
+        uses: actions/checkout@v4
+
+      - name: Install LLVM and Clang (aws-lc-rs bindgen, mirrors release.yml)
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "20.1"
+          directory: ${{ runner.temp }}/llvm
+
+      - name: Set LIBCLANG_PATH
+        shell: pwsh
+        run: |
+          $llvmBin = Join-Path $env:LLVM_PATH "bin"
+          "LIBCLANG_PATH=$llvmBin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Setup Python (mach bootstrap)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv (required by mach's Python environment management)
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: false
+
+      - name: Fetch + bootstrap gstreamer
+        working-directory: servo
+        shell: pwsh
+        run: |
+          .\mach fetch
+          .\mach bootstrap-gstreamer
+
+      - name: Build servoshell (release, locked)
+        working-directory: servo
+        shell: pwsh
+        run: .\mach build --locked --release
+
+      - name: Build brow-shell (product binary, shares the dependency build)
+        working-directory: servo
+        shell: pwsh
+        run: cargo build --locked --release -p brow-shell
+
+      - name: Smoke test — servoshell reports version, brow-shell exists
+        shell: pwsh
+        run: |
+          .\servo\target\release\servoshell.exe --version
+          if (-not (Test-Path .\servo\target\release\brow-shell.exe)) {
+            throw "brow-shell.exe missing from target/release"
+          }
+          Write-Host "windows compile gate OK"

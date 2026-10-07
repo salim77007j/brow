@@ -30,3 +30,36 @@ product code touched in this commit.
 
 **Branch protection (owner directive 0.7).** Attempted via GitHub API after
 this commit; result recorded in the next WORKLOG entry.
+
+---
+
+## 2026-10-08 · Phase 0 · CI quality gates (`.github/workflows/ci.yml`)
+
+**WHAT.**
+- CI now triggers on pushes to `v0.7-rebuild` (was `main` only) + per-ref
+  concurrency cancellation (newest push supersedes queued multi-hour runs).
+- `build-servo-linux`: added (a) product build `cargo build --release -p
+  brow-shell` (shares the engine dependency graph), (b) **binary size gate**
+  — stripped `release`-profile brow-shell ≤ 200 MiB, actual size printed to
+  the job summary every run (D-004 + amendment), (c) **product smoke** —
+  brow-shell under Xvfb must load the privacy filter engine AND reach
+  document parse (fingerprint-defenses log line) on example.com, with a 600 MB
+  RSS guardrail (target-tracking happens in Phase 4; software-GL CI numbers
+  are not real-GPU numbers).
+- New `build-servo-windows` job: full engine + brow-shell compile on
+  windows-2022 on every push (fast tests run first), smoke = servoshell
+  `--version` + brow-shell.exe present. Mirrors release.yml's recipe minus
+  packaging (LLVM 20.1, LIBCLANG_PATH, uv, mach fetch + bootstrap-gstreamer).
+- Fast gates (`brow-net-core`, `brow-chrome-core`, `brow-privacy`,
+  `brow-lints`) now run before both engine-build jobs so trivial failures
+  never burn multi-hour builds.
+
+**WHY.** Owner directive 0.7 (automated quality gates on every push) and the
+v0.6.x lesson that Windows-only defects reach releases when Windows compiles
+only at tag time (D-005).
+
+**VERIFIED.** YAML parses (7 jobs, triggers correct); gate steps are
+deterministic pass/fail; no product code touched. Real-gate validation
+happens on this push's CI run — first green run also records the size/RSS
+baselines for Phase 1 calibration.
+
