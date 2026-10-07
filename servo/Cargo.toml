@@ -435,15 +435,21 @@ debug = "line-tables-only"
 
 # brow (v0.6.1 reassessment, fix 1.1): the shipped profile previously used
 # opt-level="s" (optimize for size) — real-world testing showed page loads
-# far slower than every other browser. Speed is now the optimization target:
-# opt-level 3 keeps the fat LTO / single-CGU codegen benefits while producing
-# code the hot layout/script/paint paths can actually run at full rate.
+# far slower than every other browser. Speed is now the optimization target.
+#
+# opt-level=2, NOT 3: the first opt-3 build segfaulted (SIGSEGV, Script
+# thread) on https://www.wikipedia.org while the same binary completes
+# example.com — reproducible across runs, absent in the identical code at
+# opt-level="s" (v0.6.0 binary). A miscompile/UB exposure in the vendored
+# engine at O3 is the prime suspect; O2 keeps the hot-loop wins over "s"
+# and is upstream Servo's sanitizer/CI grade. Revisit O3 (+PGO) in v0.6.2
+# with a minimized crash case.
 [profile.production]
 inherits = "release"
 debug-assertions = false
 lto = true
 codegen-units = 1
-opt-level = 3
+opt-level = 2
 
 [profile.production-stripped]
 inherits = "production"
