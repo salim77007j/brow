@@ -218,6 +218,17 @@ impl winit::application::ApplicationHandler<BrowEvent> for BrowApp {
                 state.open_tab(home, true);
             }
 
+            // brow (v0.6.1): the startup path never applied the tab lifecycle
+            // events, so the first tab's WebView was never created — the
+            // chrome rendered, the address bar showed the URL, and the
+            // content area stayed blank forever (found by the first real
+            // runtime test of the product binary; phase 6 fixed compilation
+            // only). Synthesize the same events the UI actions emit.
+            if let Some(id) = state.tabs.active_id() {
+                let events = vec![TabEvent::Created(id), TabEvent::Activated(id)];
+                state.apply_tab_events(events, active, &self.delegate);
+            }
+
             state.sync_chrome();
         }
 
