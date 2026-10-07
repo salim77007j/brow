@@ -1,0 +1,164 @@
+# Experiment: O2/O3 SIGSEGV codegen bisect (v0.7 Phase 1, see docs/V2_PLAN.md)
+#
+# Purpose. brow v0.6.1-era experiments showed that switching the shipped
+# [profile.production] from opt-level="s" to opt-level 2 or 3 (keeping
+# lto=true (fat) + codegen-units=1) produces a reproducible SIGSEGV in the
+# Script thread on https://www.wikipedia.org (see the comment block above
+# [profile.production] in servo/Cargo.toml). The default `release` profile
+# (opt-level 3, no LTO, 16 CGUs) builds green in CI and — as of the first
+# gated run — its smoke test passes, which makes **fat LTO x high opt-level**
+# the prime suspect.
+#
+# Method. Build the product shell (brow-shell, which embeds the full engine)
+# under the `production` profile while overriding single codegen knobs via
+# Cargo's profile environment overrides (CARGO_PROFILE_*), then load the
+# wikipedia repro page under Xvfb + software GL and classify the outcome:
+#   CRASH(signal N)  = reproduced
+#   PASS(alive 150s) = page stayed up for the whole observation window
+#   EXITED(rc)       = process ended with a normal exit code (also recorded)
+#
+# Variants.
+#   s-control      shipped config (opt "s", fat LTO, 1 CGU)  -> EXPECT PASS
+#   o3-fat-repro   opt 3, fat LTO (the crashing config)      -> EXPECT CRASH
+#                  — validates that the crash reproduces in CI at all
+#   o3-nolto       opt 3, no LTO, 16 CGUs                    -> if PASS: fat LTO implicated
+#   o3-thin        opt 3, thin LTO, 1 CGU                    -> upstream-like middle point
+#   o3-fat-mozjsO1 opt 3, fat LTO, mozjs/mozjs-sys at opt 1  -> if PASS: mozjs codegen implicated
+#
+# Rules (docs/PROCESS.md §0.5): this workflow lives ONLY on the
+# experiment/o2o3-codegen branch; it never runs against main; every result is
+# recorded in docs/EXPERIMENTS.md on the experiment branch before any fix
+# lands on v0.7-rebuild.
+
+name: experiment-codegen-matrix
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [experiment/o2o3-codegen]
+    paths: ['.github/workflows/experiment-codegen-matrix.yml']
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  codegen:
+    name: ${{ matrix.id }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: s-control
+            opt_level: ""
+            lto: ""
+            cgu: ""
+            mozjs_o1: false
+          - id: o3-fat-repro
+            opt_level: "3"
+            lto: ""
+            cgu: ""
+            mozjs_o1: false
+          - id: o3-nolto
+            opt_level: "3"
+            lto: "off"
+            cgu: "16"
+            mozjs_o1: false
+          - id: o3-thin
+            opt_level: "3"
+            lto: "thin"
+            cgu: "1"
+            mozjs_o1: false
+          - id: o3-fat-mozjsO1
+            opt_level: "3"
+            lto: ""
+            cgu: ""
+            mozjs_o1: true
+    steps:
+      - name: Checkout brow (with vendored servo/)
+        uses: actions/checkout@v4
+
+      - name: Free disk space for the ~20 GB build tree
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL || true
+          sudo docker image prune --force || true
+          df -h /
+
+      - name: Install uv (required by mach)
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install Servo build dependencies
+        run: |
+          sudo apt-get update
+          cd servo
+          ./mach bootstrap
+
+      - name: Apply codegen overrides for this variant
+        run: |
+          if [ -n "${{ matrix.opt_level }}" ]; then
+            echo "CARGO_PROFILE_PRODUCTION_OPT_LEVEL=${{ matrix.opt_level }}" >> "$GITHUB_ENV"
+          fi
+          if [ -n "${{ matrix.lto }}" ]; then
+            echo "CARGO_PROFILE_PRODUCTION_LTO=${{ matrix.lto }}" >> "$GITHUB_ENV"
+          fi
+          if [ -n "${{ matrix.cgu }}" ]; then
+            echo "CARGO_PROFILE_PRODUCTION_CODEGEN_UNITS=${{ matrix.cgu }}" >> "$GITHUB_ENV"
+          fi
+          if [ "${{ matrix.mozjs_o1 }}" = "true" ]; then
+            echo "CARGO_PROFILE_PRODUCTION_PACKAGE_MOZJS_OPT_LEVEL=1" >> "$GITHUB_ENV"
+            echo "CARGO_PROFILE_PRODUCTION_PACKAGE_MOZJS_SYS_OPT_LEVEL=1" >> "$GITHUB_ENV"
+          fi
+          echo "variant=${{ matrix.id }} opt=${{ matrix.opt_level }} lto=${{ matrix.lto:-fat(inherited)}} cgu=${{ matrix.cgu:-1(inherited)}} mozjsO1=${{ matrix.mozjs_o1 }}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Build brow-shell under production profile
+        run: |
+          set -o pipefail
+          cd servo
+          cargo build --locked --profile production -p brow-shell 2>&1 | tail -5
+
+      - name: Crash repro test — wikipedia under Xvfb + software GL
+        run: |
+          cd servo
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-brow"; mkdir -p "$XDG_RUNTIME_DIR"
+          if [ -f /usr/share/glvnd/egl_vendor.d/50_mesa.json ]; then
+            export __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json
+          fi
+          export BROW_DATA_DIR="$RUNNER_TEMP/brow-data"; mkdir -p "$BROW_DATA_DIR"
+          printf '{"home_page": "https://www.wikipedia.org/wiki/Servo_(software)", "block_ads": true}\n' \
+            > "$BROW_DATA_DIR/settings.json"
+          RUST_LOG=info timeout 150 xvfb-run -a -s "-screen 0 1280x800x24" \
+            target/production/brow-shell > "$RUNNER_TEMP/crash-test.log" 2>&1 &
+          PID=$!
+          for i in $(seq 1 155); do
+            kill -0 "$PID" 2>/dev/null || break
+            sleep 1
+          done
+          if kill -0 "$PID" 2>/dev/null; then
+            RESULT="PASS(alive 150s)"
+            kill "$PID" 2>/dev/null || true
+          else
+            wait "$PID"; RC=$?
+            if [ "$RC" -eq 124 ]; then
+              RESULT="PASS(timeout-kill)"
+            elif [ "$RC" -ge 128 ]; then
+              RESULT="CRASH(signal $((RC - 128)))"
+            else
+              RESULT="EXITED(rc=$RC)"
+            fi
+          fi
+          echo "VERDICT(${{ matrix.id }}): $RESULT" | tee -a "$GITHUB_STEP_SUMMARY"
+          grep -aE "panic|SIGSEGV|segmentation|Script thread" "$RUNNER_TEMP/crash-test.log" \
+            | head -5 | tee -a "$GITHUB_STEP_SUMMARY" || true
+          cp "$RUNNER_TEMP/crash-test.log" "$GITHUB_WORKSPACE/crash-test-${{ matrix.id }}.log" || true
+
+      - name: Upload crash-test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-test-${{ matrix.id }}
+          path: crash-test-${{ matrix.id }}.log
+          if-no-files-found: ignore
