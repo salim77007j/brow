@@ -560,7 +560,7 @@ fn apply_engine_prefs(state: &mut BrowState) {
         );
         let _ = servo.set_preference(
             "network_privacy_fingerprint_level",
-            servo::PrefValue::String(state.settings.fingerprint_defense.clone()),
+            servo::PrefValue::Str(state.settings.fingerprint_defense.clone()),
         );
         let _ = servo.set_preference(
             "network_privacy_cname_detection_enabled",
