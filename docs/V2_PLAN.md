@@ -209,3 +209,73 @@ ship best stable + honest report (D-001 accepted risk).
   record in Phase 5 if it persists).
 - egui tab-bar design for parity with browser tab UX (drag-reorder etc. is
   explicitly out of v0.7.0 scope; basic strip only).
+
+## 8. Competitor practice notes (Phase 1 research, 2026-10-08)
+
+What Firefox/Chromium actually do for the four areas brow must redo in Phases
+2–4. Public sources fetched 2026-10-08; each note maps to a brow work item.
+
+### 8.1 Single-window compositor (→ Phase 2)
+
+- Chromium RenderingNG: the display compositor (Viz) "composites a set of
+  frames, from multiple clients, into a single backing store" — render
+  processes AND the browser/UI process submit frames, one OS window shows the
+  result (developer.chrome.com/docs/chromium/renderingng; the
+  components/viz README, chromium.googlesource.com).
+- brow's target is the same shape at single-process scale: servoshell's
+  WindowRenderingContext + OffscreenRenderingContext compositing egui chrome
+  and the webview (§3.1). The v0.6.x two-window architecture has no
+  counterpart in any shipping browser — z-order/focus/taskbar bugs were
+  structural, not incidental.
+
+### 8.2 IME (→ Phase 3)
+
+- winit exposes IME as `WindowEvent::Ime(Ime::{Enabled, Disabled,
+  Preedit(String, cursor), Commit(String)})` and only fires it after the
+  window opts in (`Window::set_ime_allowed(true)`). servoshell already routes
+  these into CompositionEvent (§3.3); egui has a native `ImeEvent`, so the
+  chrome's own URL bar can accept CJK input too (docs.rs winit/egui).
+- Ecosystem caveat: winit's X11 IME path has had regressions
+  (rust-windowing/winit#2888, Ime events not delivered on X11). The owner's
+  platform is Windows — validate Windows IME FIRST (preedit visible in URL
+  bar, commit lands in the page), treat Linux IME as secondary. Xvfb CI can
+  never validate IME (no IME infrastructure); Phase 3 needs an owner-hardware
+  test step.
+
+### 8.3 Font fallback & CJK (→ Phase 3)
+
+- The v0.6.x failure class (CJK tofu, icon fonts as solid black squares, R-09)
+  matches Chromium's own historical bugs — CJK glyphs blank/tofu when the
+  fallback chain misses (issues.chromium.org/41120719, 41035140). It is a
+  known, well-characterized failure mode, not something exotic.
+- Windows practice: DirectWrite's font fallback + font linking is the OS
+  mechanism browsers hook (learn.microsoft.com, "Customize font selection
+  with font fallback and font linking"). Firefox keeps explicit per-script
+  fallback lists and a separate CJK algorithm (bugzilla.mozilla.org 705594;
+  the browser-font-fallback.md gist documents Firefox-vs-Chromium Windows
+  behavior experimentally).
+- Rust-stack reference: Raph Levien's font-fallback deep dive (skribo, 2019)
+  — an explicit hard-coded per-script fallback list is a legitimate first
+  implementation ("a complete hack is sometimes viable").
+- Implication for brow: Phase 3 ships (a) a bundled CJK font (fonts/ is
+  already in the release payload) and (b) an explicit script→family fallback
+  table (Latin default; CJK → bundled Noto Sans CJK; emoji → bundled) before
+  any deeper fontconfig/DirectWrite integration. Reproduce the icon-font
+  black-square bug on MDN locally (evidence in docs/evidence/) before coding.
+
+### 8.4 Codegen + PGO (→ Phase 4)
+
+- Shipping browsers: Firefox = Clang LTO (ThinLTO-class) + PGO on tier-1;
+  Chrome = ThinLTO + PGO. Brow's fat LTO (`lto=true`, 1 CGU) at O2/O3 is the
+  outlier configuration — E-001 (§4) tests exactly that interaction.
+- Rust's PGO workflow matches the two-stage CI design already written down in
+  docs/BUILD_PGO.md: `-Cprofile-generate` → run a representative training
+  workload → `llvm-profdata merge` → `-Cprofile-use` (llvm-profdata ships
+  with the rustup `llvm-tools` component). Reading LLVM optimization remarks
+  verifies PGO is actually biting (kobzol's cargo-optimization-remarks notes).
+- Profile robustness: LLVM profiles are sensitive to compiler-option and
+  version changes (llvm.org discourse) — retrain on every toolchain bump and
+  keep the training workload checked in so profiles stay reproducible.
+- Implication: PGO adoption is gated on the same 20-site smoke suite as the
+  codegen fix (§6 Phase 4), never adopted blind; training commands live in a
+  checked-in script, not tribal memory.

@@ -272,3 +272,26 @@ measure reality), 0.9/0.10 (decisions and risks updated as they surface).
 **VERIFIED.** All claims above cite API responses, job logs fetched from
 run 37660240086, or byte-level file reads; round-2 run id recorded; both
 fixes pushed and visible in remote history.
+
+---
+
+## 2026-10-08 · Phase 1.8 · Competitor practice research → V2_PLAN §8
+
+**WHAT.**
+- Web research (public sources, fetched 2026-10-08) covering the four
+  Phase 2–4 problem areas, appended to docs/V2_PLAN.md as §8:
+  single-window compositor (Chromium RenderingNG/Viz), IME (winit
+  Ime/Preedit/Commit API + the X11 regression caveat → Windows-first
+  validation), font fallback & CJK (DirectWrite font linking, Firefox
+  per-script lists, Chromium CJK blank-glyph bugs matching R-09, Levien's
+  fallback design), codegen+PGO (ThinLTO+PGO as the shipping norm, rustc
+  two-stage PGO mechanics, profile-robustness caveat → retrain on toolchain
+  bumps).
+- Every claim carries its source link; each note maps to a concrete brow work
+  item (no code changes in Phase 1).
+
+**WHY.** Owner directive for Phase 1: research competitor practice for
+single-window/IME/fonts/PGO before the rebuild phases commit to designs.
+
+**VERIFIED.** Sources listed inline in §8; research JSON snapshots retained in
+the sandbox (not committed — links are the durable record).
