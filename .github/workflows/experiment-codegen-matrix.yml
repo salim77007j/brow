@@ -12,10 +12,17 @@
 # Method. Build the product shell (brow-shell, which embeds the full engine)
 # under the `production` profile while overriding single codegen knobs via
 # Cargo's profile environment overrides (CARGO_PROFILE_*), then load the
-# wikipedia repro page under Xvfb + software GL and classify the outcome:
-#   CRASH(signal N)  = reproduced
-#   PASS(alive 150s) = page stayed up for the whole observation window
-#   EXITED(rc)       = process ended with a normal exit code (also recorded)
+# wikipedia repro page under Xvfb + software GL and classify the outcome from
+# timeout(1)'s exit status (round-2 harness; round-1 aborted inside `wait`
+# under bash -e before any verdict printed — see docs/EXPERIMENTS.md E-001):
+#   PASS(alive 150s) = rc 124: observation window elapsed, process ALIVE
+#   CRASH(signal N)  = rc >= 128: process died of a signal (the hunted event)
+#   EXITED(rc)       = anything else: clean early exit (also a red job — a
+#                      GUI shell must not exit on its own mid-window)
+# Every path also prints the engine load markers ("filter engine loaded" +
+# "fingerprint defenses active" — the same signals the product smoke gate
+# uses) so an "alive" verdict is never mistaken for a page that never loaded,
+# and uploads crash-test.log even on red jobs.
 #
 # Variants.
 #   s-control      shipped config (opt "s", fat LTO, 1 CGU)  -> EXPECT PASS
@@ -120,6 +127,14 @@ jobs:
           cargo build --locked --profile production -p brow-shell 2>&1 | tail -5
 
       - name: Crash repro test — wikipedia under Xvfb + software GL
+        # Round-2 harness (E-001 postmortem in docs/EXPERIMENTS.md):
+        #   * verdict comes from timeout(1)'s exit status — no background PID,
+        #     no wait-loop, so bash -e can never abort before the verdict;
+        #   * 124  = window elapsed, process ALIVE  -> PASS (green job);
+        #   * >=128 = process died of a signal      -> CRASH (red job). 137
+        #     (SIGKILL) is kept visible as a crash: the log tail distinguishes
+        #     an OOM kill from anything else;
+        #   * other = clean early exit              -> EXITED (red job).
         run: |
           cd servo
           export LIBGL_ALWAYS_SOFTWARE=1
@@ -130,30 +145,44 @@ jobs:
           export BROW_DATA_DIR="$RUNNER_TEMP/brow-data"; mkdir -p "$BROW_DATA_DIR"
           printf '{"home_page": "https://www.wikipedia.org/wiki/Servo_(software)", "block_ads": true}\n' \
             > "$BROW_DATA_DIR/settings.json"
+
+          set +e
           RUST_LOG=info timeout 150 xvfb-run -a -s "-screen 0 1280x800x24" \
-            target/production/brow-shell > "$RUNNER_TEMP/crash-test.log" 2>&1 &
-          PID=$!
-          for i in $(seq 1 155); do
-            kill -0 "$PID" 2>/dev/null || break
-            sleep 1
-          done
-          if kill -0 "$PID" 2>/dev/null; then
+            target/production/brow-shell > "$RUNNER_TEMP/crash-test.log" 2>&1
+          RC=$?
+          set -e
+
+          if [ "$RC" -eq 124 ]; then
             RESULT="PASS(alive 150s)"
-            kill "$PID" 2>/dev/null || true
+          elif [ "$RC" -ge 128 ]; then
+            RESULT="CRASH(signal $((RC - 128)))"
           else
-            wait "$PID"; RC=$?
-            if [ "$RC" -eq 124 ]; then
-              RESULT="PASS(timeout-kill)"
-            elif [ "$RC" -ge 128 ]; then
-              RESULT="CRASH(signal $((RC - 128)))"
-            else
-              RESULT="EXITED(rc=$RC)"
-            fi
+            RESULT="EXITED(rc=$RC)"
           fi
           echo "VERDICT(${{ matrix.id }}): $RESULT" | tee -a "$GITHUB_STEP_SUMMARY"
-          grep -aE "panic|SIGSEGV|segmentation|Script thread" "$RUNNER_TEMP/crash-test.log" \
-            | head -5 | tee -a "$GITHUB_STEP_SUMMARY" || true
-          cp "$RUNNER_TEMP/crash-test.log" "$GITHUB_WORKSPACE/crash-test-${{ matrix.id }}.log" || true
+
+          LOG="$RUNNER_TEMP/crash-test.log"
+          LOADED=$(grep -acE "filter engine loaded" "$LOG" 2>/dev/null || true)
+          PARSED=$(grep -acE "fingerprint defenses active" "$LOG" 2>/dev/null || true)
+          echo "load markers: filter-engine=${LOADED:-0} fingerprint-defense=${PARSED:-0}" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "--- crash signatures (first 8 matches) ---" | tee -a "$GITHUB_STEP_SUMMARY"
+          grep -aE "panic|SIGSEGV|segmentation|Script thread" "$LOG" 2>/dev/null \
+            | head -8 | tee -a "$GITHUB_STEP_SUMMARY" || true
+          echo "--- crash-test.log tail (last 12 lines) ---" | tee -a "$GITHUB_STEP_SUMMARY"
+          tail -12 "$LOG" 2>/dev/null | tee -a "$GITHUB_STEP_SUMMARY" || true
+
+          # Reap orphans if the window kill left the tree partially alive.
+          pkill -f 'target/production/brow-shell' 2>/dev/null || true
+          pkill -f 'Xvfb' 2>/dev/null || true
+
+          cp "$LOG" "$GITHUB_WORKSPACE/crash-test-${{ matrix.id }}.log" 2>/dev/null || true
+
+          # Verdict drives the job color: alive = green, anything else = red.
+          case "$RESULT" in
+            PASS*) exit 0 ;;
+            *)     exit 1 ;;
+          esac
 
       - name: Upload crash-test log
         if: always()
