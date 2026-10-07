@@ -215,14 +215,14 @@ jobs:
           cd servo
           cargo build --locked --release -p brow-shell || cargo build --release -p brow-shell
 
-      - name: Quality gate — binary size (DECISIONS D-004)
+      - name: Quality gate — binary size (DECISIONS D-004, D-006)
         # Gate applies to the stripped default-`release` profile (what this
-        # job builds), measured identically on every push. 200 MiB is a
-        # deliberately loose initial value (calibrated blind); Phase 1 records
-        # the real baseline and tightens it — see the D-004 amendment.
+        # job builds), measured identically on every push. Baseline measured
+        # 147 MiB on the first gated run (37652829943); D-006 tightens the
+        # gate to 160 MiB (+9% headroom for toolchain/PGO variance).
         run: |
           cd servo
-          SIZE_GATE_MIB=200
+          SIZE_GATE_MIB=160
           cp target/release/brow-shell "$RUNNER_TEMP/brow-sizecheck"
           strip "$RUNNER_TEMP/brow-sizecheck"
           BYTES=$(stat -c%s "$RUNNER_TEMP/brow-sizecheck")

@@ -128,3 +128,53 @@ class that bit v0.6.x); Linux-only CI (violates owner directive).
 
 **Risks accepted.** Long feedback loops during heavy phases; mitigated by
 batching pushes per sub-item (not per file) and relying on fast local gates.
+
+---
+
+## D-006 — Size gate tightened 200 → 160 MiB on measured baseline
+
+**Date:** 2026-10-08 · **Amends:** D-004 amendment
+
+**Context.** The D-004 amendment set a deliberately loose 200 MiB blind value and
+promised to tighten it once the real release-profile baseline was measured. The
+first gated run (`37652829943`, job `build-servo-linux`) measured **147 MiB**
+stripped, default-release-profile `brow-shell`.
+
+**Decision.** `SIZE_GATE_MIB = 160` in `ci.yml` (source of truth unchanged).
+Headroom: +13 MiB over measured baseline, covering the expected production-profile
+move (opt-3/thin is smaller than default release; PGO historically shrinks or is
+neutral) plus CJK font bundling in the payload (Phase 3). Production-stripped
+ships at ~105 MiB today; the shipped artifact stays well under the gate.
+
+**Rejected.** Keeping 200 (no longer a real constraint); 155 (too tight for
+PGO/LTO variance across toolchain bumps); measuring the gate on
+`production-stripped` instead (would rebuild the world twice per push for no
+extra safety — the default release is the superset config).
+
+**Risks accepted.** A toolchain bump that inflates codegen ≥9% would false-trip
+the gate; that friction is intentional — it forces a DECISIONS entry, not a
+silent gate raise.
+
+---
+
+## D-007 — Bisect anchor rule for codegen experiments
+
+**Date:** 2026-10-08
+
+**Context.** E-001 (O2/O3 SIGSEGV bisect) runs on CI under Xvfb + software GL.
+The original v0.6.x crash repro was observed on real hardware. If the crash does
+not reproduce under software GL, negative results (variant "passes") would be
+meaningless.
+
+**Decision.** E-001's matrix contains two anchors: `s-control` (must PASS) and
+`o3-fat-repro` (must CRASH). All other variant verdicts are trusted only when
+both anchors behave as expected. If `o3-fat-repro` does not crash, the same
+matrix is re-run on the owner's hardware before any conclusion or fix.
+
+**Rejected.** Trusting a matrix without anchors (risk: silently "fixing" a crash
+that still exists on hardware, shipping the exact v0.6.x failure mode again);
+skipping the control (saves ~1 build, loses harness sanity).
+
+**Risks accepted.** Two extra full builds (~4–6 runner-hours) per matrix run on
+a public repo (free runners) — cheap insurance against a wrong engine-profile
+decision.
