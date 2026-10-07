@@ -332,9 +332,15 @@ fn pump(
     }
 
     // 2. Engine pump (delegate callbacks fire here).
+    //
+    // brow (v0.6.1): clone the engine handle out first — delegate callbacks
+    // (notify_url_changed & co.) take their own `borrow_mut()` of the state
+    // while the engine spin is in progress, which dead-panned
+    // "RefCell already borrowed" as long as we held the borrow across
+    // spin_event_loop (first real runtime test, tracker-test run).
     {
-        let state = state.borrow();
-        if let Some(servo) = &state.servo {
+        let servo = state.borrow().servo.clone();
+        if let Some(servo) = servo {
             servo.spin_event_loop();
         }
     }
