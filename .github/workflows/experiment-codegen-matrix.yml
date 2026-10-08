@@ -54,48 +54,37 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Dynamic-matrix pattern: the `matrix` context is NOT available in a job-level
+  # `if` (matrix expansion happens after the job if is evaluated — round-3
+  # attempt 1 failed with "Unrecognized named-value: 'matrix'"), so the variant
+  # set is materialized here instead. The push trigger was removed: round 3 is
+  # explicitly dispatched — a workflow-file push must not silently re-burn 5
+  # builds.
+  select-variants:
+    name: select variants (${{ inputs.variant_set || 'all' }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - id: select
+        run: |
+          ALL='{"include":[{"id":"s-control","opt_level":"","lto":"","cgu":"","mozjs_o1":false},{"id":"o3-fat-repro","opt_level":"3","lto":"","cgu":"","mozjs_o1":false},{"id":"o3-nolto","opt_level":"3","lto":"off","cgu":"16","mozjs_o1":false},{"id":"o3-thin","opt_level":"3","lto":"thin","cgu":"1","mozjs_o1":false},{"id":"o3-fat-mozjsO1","opt_level":"3","lto":"","cgu":"","mozjs_o1":true}]}'
+          ANCHORS='{"include":[{"id":"s-control","opt_level":"","lto":"","cgu":"","mozjs_o1":false},{"id":"o3-fat-repro","opt_level":"3","lto":"","cgu":"","mozjs_o1":false}]}'
+          if [ "${{ inputs.variant_set }}" = "anchors" ]; then
+            echo "matrix=${ANCHORS}" >> "$GITHUB_OUTPUT"
+          else
+            echo "matrix=${ALL}" >> "$GITHUB_OUTPUT"
+          fi
+
   codegen:
     name: ${{ matrix.id }}
+    needs: select-variants
     runs-on: ubuntu-24.04
     timeout-minutes: 330
-    # variant_set=anchors runs only the two D-007 anchor variants; 'all' runs
-    # the full matrix (the push trigger was removed: round 3 is explicitly
-    # dispatched — a workflow-file push must not silently re-burn 5 builds).
-    if: ${{ inputs.variant_set != 'anchors' || matrix.anchor }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - id: s-control
-            opt_level: ""
-            lto: ""
-            cgu: ""
-            mozjs_o1: false
-            anchor: true
-          - id: o3-fat-repro
-            opt_level: "3"
-            lto: ""
-            cgu: ""
-            mozjs_o1: false
-            anchor: true
-          - id: o3-nolto
-            opt_level: "3"
-            lto: "off"
-            cgu: "16"
-            mozjs_o1: false
-            anchor: false
-          - id: o3-thin
-            opt_level: "3"
-            lto: "thin"
-            cgu: "1"
-            mozjs_o1: false
-            anchor: false
-          - id: o3-fat-mozjsO1
-            opt_level: "3"
-            lto: ""
-            cgu: ""
-            mozjs_o1: true
-            anchor: false
+      matrix: ${{ fromJSON(needs.select-variants.outputs.matrix) }}
     steps:
       - name: Checkout brow (with vendored servo/)
         uses: actions/checkout@v4
