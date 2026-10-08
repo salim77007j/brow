@@ -549,3 +549,46 @@ visuals).
 **VERIFIED.** Per-round job conclusions + logs read from the GitHub Actions
 API; standalone rustc check of the fixed pattern; YAML validated on every
 workflow edit.
+
+---
+
+## 2026-10-08 · Phase 2.5 · Phase 2 CLOSE — single-window rebuild verified end-to-end
+
+**WHAT.**
+- Visual evidence captured and committed: `docs/evidence/phase2-single-window/
+  brow-single-window-example.com.png` (CI run 37830095914, commit 39ce1ee0e).
+  The capture shows ONE window with the GPU-drawn egui toolbar (back/forward/
+  stop, URL bar, the brow privacy counter rendering "0 blocked" for
+  example.com — the D-011 path is live end-to-end), the tab strip (page
+  title + "+" + ⊞), and the composited webview area. No separate chrome
+  window exists to cover or steal focus — the v0.6.1 failure classes are
+  structurally gone.
+- Evidence-capture infrastructure matured across rounds 5-10 with every
+  failure mode recorded: wrong DISPLAY construction (`:X99`), X authority
+  cookie scoped to xvfb-run's own command, self-matching `pkill -f` (exit
+  143), xvfb-run propagating import's rc=2 through bash -e (exit 2), and an
+  apostrophe inside the quoted capture script closing the string early
+  (bash syntax error, reproduced locally with `bash -n` on the extracted
+  step script). Final form: capture inside the xvfb-run session, guarded,
+  error-surfacing, artifact-uploaded.
+- RISKS updated: R-04 → MITIGATED-CI (rebuild verified on CI incl. Windows
+  build; owner validation pending before main); R-05 note refreshed (Slint
+  platform deleted; winit IME path is now the product input path).
+
+**Phase 2 close state.** 2.0a start check ✓ · 2.0b round-3 dispatch ✓ ·
+2.1 integration map ✓ · 2.2 design lock (D-010/011/012) ✓ · 2.3 rebuild
+(thin bin over libified servoshell; 2.2k LOC two-window stack deleted) ✓ ·
+2.4 CI verification: 7/7 green incl. Windows x86_64 build, size 149 MiB ≤
+160, smoke `signals=1 alive=yes rss_kb≈377-380k` ✓ · 2.5 visual evidence +
+risk refresh ✓. Final rebuild head: 39ce1ee0e (+ evidence/docs commits).
+
+**Deferred to owner validation (the "then owner Windows validation" clause
+of V2_PLAN §6.2):** real-GPU/driver rendering, focus behavior on Windows,
+content text-level rendering (white-area observation in the software-GL
+capture), IME smoke. Phase 3 (IME/CJK/RTL/fonts) opens after the owner's
+"continue".
+
+**VERIFIED.** Screenshot downloaded from the run's artifact API and
+inspected (1280×800 PNG, window chrome + counter + tabs visible); per-round
+logs read from the GitHub Actions API; gate numbers from the job summary
+lines quoted verbatim above.
