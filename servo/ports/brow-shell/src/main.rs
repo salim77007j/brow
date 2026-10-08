@@ -67,7 +67,7 @@ fn main() {
 /// read lock-free from the privacy engine's process-global mirrors. Plain
 /// ASCII text: egui's default fonts do not carry emoji glyphs.
 fn privacy_status_item() -> Option<String> {
-    let totals = brow_privacy::global_totals();
+    let totals = brow_privacy::stats::global_totals();
     Some(format!("{} blocked", totals.network_blocked))
 }
 
