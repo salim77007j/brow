@@ -317,13 +317,14 @@ jobs:
             sleep 8   # let the first paint + compositor settle
             import -window root "'"$RUNNER_TEMP"'/brow-single-window.png" 2>/tmp/import.err
             RC=$?
+            [ -s /tmp/import.err ] && cat /tmp/import.err
             # Kill by PID only — a `pkill -f "target/release/brow-shell"`
             # here matches THIS bash -c's own command line (the pattern text
             # is in it) and SIGTERMs the whole step (round-7 evidence:
             # exit 143 after a good capture).
             kill "$BPID" 2>/dev/null
             exit $RC
-          '
+          ' || echo "xvfb-run capture exited nonzero — treated as best-effort"
           if [ -s "$RUNNER_TEMP/brow-single-window.png" ]; then
             SIZE=$(stat -c%s "$RUNNER_TEMP/brow-single-window.png" || echo 0)
             echo "headed shell screenshot OK: $SIZE bytes" | tee -a "$GITHUB_STEP_SUMMARY"
