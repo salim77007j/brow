@@ -41,9 +41,14 @@ name: experiment-codegen-matrix
 
 on:
   workflow_dispatch:
-  push:
-    branches: [experiment/o2o3-codegen]
-    paths: ['.github/workflows/experiment-codegen-matrix.yml']
+    inputs:
+      variant_set:
+        description: "Which matrix variants to run: 'all' (full matrix) or 'anchors' (s-control + o3-fat-repro only — used when the other variants already hold verdicts, E-001 round 3)"
+        type: choice
+        options:
+          - all
+          - anchors
+        default: all
 
 env:
   CARGO_TERM_COLOR: always
@@ -53,6 +58,10 @@ jobs:
     name: ${{ matrix.id }}
     runs-on: ubuntu-24.04
     timeout-minutes: 330
+    # variant_set=anchors runs only the two D-007 anchor variants; 'all' runs
+    # the full matrix (the push trigger was removed: round 3 is explicitly
+    # dispatched — a workflow-file push must not silently re-burn 5 builds).
+    if: ${{ inputs.variant_set != 'anchors' || matrix.anchor }}
     strategy:
       fail-fast: false
       matrix:
@@ -62,26 +71,31 @@ jobs:
             lto: ""
             cgu: ""
             mozjs_o1: false
+            anchor: true
           - id: o3-fat-repro
             opt_level: "3"
             lto: ""
             cgu: ""
             mozjs_o1: false
+            anchor: true
           - id: o3-nolto
             opt_level: "3"
             lto: "off"
             cgu: "16"
             mozjs_o1: false
+            anchor: false
           - id: o3-thin
             opt_level: "3"
             lto: "thin"
             cgu: "1"
             mozjs_o1: false
+            anchor: false
           - id: o3-fat-mozjsO1
             opt_level: "3"
             lto: ""
             cgu: ""
             mozjs_o1: true
+            anchor: false
     steps:
       - name: Checkout brow (with vendored servo/)
         uses: actions/checkout@v4
@@ -97,11 +111,28 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Install Servo build dependencies
+      - name: Install Servo build dependencies (3-attempt retry — round-2 GHA flake)
+        # Round 2 lost both anchor jobs to a runner flake that hung
+        # 'mach bootstrap' for 5.5 h until the 330-min job timeout killed it.
+        # Guard each attempt at 15 min and retry twice; a hung bootstrap now
+        # fails fast instead of burning the whole job budget.
         run: |
           sudo apt-get update
           cd servo
-          ./mach bootstrap
+          ok=0
+          for attempt in 1 2 3; do
+            echo "--- mach bootstrap attempt ${attempt}/3 (15-min guard) ---"
+            RC=0
+            timeout 900 ./mach bootstrap || RC=$?
+            if [ "$RC" -eq 0 ]; then ok=1; break; fi
+            echo "attempt ${attempt} failed rc=${RC} — sleeping 15s before retry"
+            sleep 15
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "mach bootstrap failed 3 consecutive attempts" >&2
+            exit 1
+          fi
+          echo "mach bootstrap OK"
 
       - name: Apply codegen overrides for this variant
         run: |
