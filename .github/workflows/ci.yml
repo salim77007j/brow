@@ -300,20 +300,28 @@ jobs:
           fi
           export BROW_DATA_DIR="$RUNNER_TEMP/brow-data"; mkdir -p "$BROW_DATA_DIR"
           printf '{"home_page": "https://example.com", "block_ads": true}\n' > "$BROW_DATA_DIR/settings.json"
-          RUST_LOG=info timeout 75 xvfb-run -a -s "-screen 0 1280x800x24" \
-            target/release/brow-shell > "$RUNNER_TEMP/brow-shot.log" 2>&1 &
-          PID=$!
-          for i in $(seq 1 60); do
-            grep -q "fingerprint defenses active" "$RUNNER_TEMP/brow-shot.log" 2>/dev/null && break
-            kill -0 "$PID" 2>/dev/null || break
-            sleep 1
-          done
-          sleep 8   # let the first paint + compositor settle
-          # /tmp/.X11-unix lists sockets named X<N>; the display is ":<N>"
-          # (a naive ":X<N>" fails — round-5 evidence: "unable to open X
-          # server `::X99'").
-          DISPLAY_NUM=$(ls /tmp/.X11-unix/ 2>/dev/null | head -1 | sed 's/^X//')
-          if DISPLAY=":${DISPLAY_NUM}" timeout 20 import -window root "$RUNNER_TEMP/brow-single-window.png" 2>/tmp/import.err; then
+          # Everything that needs the X server — the shell AND the capture —
+          # runs inside ONE xvfb-run invocation: xvfb-run generates an X
+          # authority cookie only for its own wrapped command (round-6
+          # evidence: `import` failed with `unable to open X server ':99'`
+          # from outside, even with the right display number).
+          xvfb-run -a -s "-screen 0 1280x800x24" bash -c '
+            set +e
+            RUST_LOG=info target/release/brow-shell > "'"$RUNNER_TEMP"'/brow-shot.log" 2>&1 &
+            BPID=$!
+            for i in $(seq 1 60); do
+              grep -q "fingerprint defenses active" "'"$RUNNER_TEMP"'/brow-shot.log" 2>/dev/null && break
+              kill -0 "$BPID" 2>/dev/null || break
+              sleep 1
+            done
+            sleep 8   # let the first paint + compositor settle
+            import -window root "'"$RUNNER_TEMP"'/brow-single-window.png" 2>/tmp/import.err
+            RC=$?
+            kill "$BPID" 2>/dev/null
+            pkill -f "target/release/brow-shell" 2>/dev/null
+            exit $RC
+          '
+          if [ -s "$RUNNER_TEMP/brow-single-window.png" ]; then
             SIZE=$(stat -c%s "$RUNNER_TEMP/brow-single-window.png" || echo 0)
             echo "headed shell screenshot OK: $SIZE bytes" | tee -a "$GITHUB_STEP_SUMMARY"
             cp "$RUNNER_TEMP/brow-single-window.png" "$GITHUB_WORKSPACE/brow-single-window.png"
@@ -321,8 +329,6 @@ jobs:
             echo "headed shell screenshot FAILED:"; cat /tmp/import.err || true
             tail -20 "$RUNNER_TEMP/brow-shot.log" || true
           fi
-          kill "$PID" 2>/dev/null || true
-          pkill -f 'target/release/brow-shell' 2>/dev/null || true
 
       - name: Smoke test — binary runs
         # The workspace's default member is ports/servoshell; its binary is
