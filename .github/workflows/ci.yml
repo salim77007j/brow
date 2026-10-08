@@ -132,12 +132,13 @@ jobs:
           rustup default $(awk -F'"' '/channel =/ {print $2}' rust-toolchain.toml)
 
       - name: Install headless compile prerequisites
-        # libfreetype-dev: freetype-sys (Slint font pipeline) resolves freetype2 via
+        # libfreetype-dev: freetype-sys font pipeline resolves freetype2 via
         # pkg-config; libfontconfig1-dev/libexpat1-dev: fontdb/system font discovery;
         # llvm + clang + libclang-dev: mozjs_sys builds SpiderMonkey from source and
         # its configure requires llvm-objdump and libclang (bindgen); autoconf2.13:
-        # SpiderMonkey's JS build system.
-        run: sudo apt-get update && sudo apt-get install -y pkg-config libx11-dev libxcb1-dev libfreetype-dev libfontconfig1-dev libexpat1-dev llvm clang libclang-dev autoconf2.13
+        # SpiderMonkey's JS build system; libudev-dev: gilrs (gamepad, a servoshell
+        # desktop dep since D-010) links libudev via libudev-sys on Linux.
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libx11-dev libxcb1-dev libfreetype-dev libfontconfig1-dev libexpat1-dev libudev-dev llvm clang libclang-dev autoconf2.13
 
       - name: cargo check (brow-shell)
         run: cargo check -p brow-shell
