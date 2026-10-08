@@ -416,4 +416,11 @@ minimal lock-free one.
 **VERIFIED.** Round-3 job list read from the GitHub Actions API (3 jobs: 1
 select + 2 anchors, both in_progress). Integration-map claims carry file:line
 refs read directly in this session. Decisions D-010..D-012 recorded in
-docs/DECISIONS.md before any rebuild code was written.
+docs/DECISIONS.md before any rebuild code was written. CORRECTION (same
+session): the design-docs commit initially mis-branch-landed on
+experiment/o2o3-codegen (workflow-fix checkout still active) and — after
+cherry-pick conflicts exposed it — a stale-grep misread led to replacing the
+existing richer D-006/D-007/D-008 sections with thinner backfills; both fixed
+in ce6a80542's follow-up: docs re-homed via targeted extraction, originals
+restored verbatim, only genuinely-new D-009 kept. Lesson: verify with the
+Grep tool / git show before assuming content is absent.

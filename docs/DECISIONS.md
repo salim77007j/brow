@@ -129,40 +129,89 @@ class that bit v0.6.x); Linux-only CI (violates owner directive).
 **Risks accepted.** Long feedback loops during heavy phases; mitigated by
 batching pushes per sub-item (not per file) and relying on fast local gates.
 
-## D-006 — Binary size gate tightened 200 → 160 MiB on measured baseline
+## D-006 — Size gate tightened 200 → 160 MiB on measured baseline
 
-**Date:** 2026-10-08 (recorded here for register completeness; originally logged
-in WORKLOG Phase 1.5, commit 178080a0d).
+**Date:** 2026-10-08 · **Amends:** D-004 amendment
 
-**Decision.** After the first gated CI run measured the stripped default-release
-`brow-shell` at 147 MiB, the every-push size gate was tightened from the blind
-200 MiB (D-004 amendment) to **160 MiB**. The gate prints the measured size into
-the job summary on every run.
+**Context.** The D-004 amendment set a deliberately loose 200 MiB blind value and
+promised to tighten it once the real release-profile baseline was measured. The
+first gated run (`37652829943`, job `build-servo-linux`) measured **147 MiB**
+stripped, default-release-profile `brow-shell`.
+
+**Decision.** `SIZE_GATE_MIB = 160` in `ci.yml` (source of truth unchanged).
+Headroom: +13 MiB over measured baseline, covering the expected production-profile
+move (opt-3/thin is smaller than default release; PGO historically shrinks or is
+neutral) plus CJK font bundling in the payload (Phase 3). Production-stripped
+ships at ~105 MiB today; the shipped artifact stays well under the gate.
+
+**Rejected.** Keeping 200 (no longer a real constraint); 155 (too tight for
+PGO/LTO variance across toolchain bumps); measuring the gate on
+`production-stripped` instead (would rebuild the world twice per push for no
+extra safety — the default release is the superset config).
+
+**Risks accepted.** A toolchain bump that inflates codegen ≥9% would false-trip
+the gate; that friction is intentional — it forces a DECISIONS entry, not a
+silent gate raise.
+
+---
+
+## D-007 — Bisect anchor rule for codegen experiments
+
+**Date:** 2026-10-08
+
+**Context.** E-001 (O2/O3 SIGSEGV bisect) runs on CI under Xvfb + software GL.
+The original v0.6.x crash repro was observed on real hardware. If the crash does
+not reproduce under software GL, negative results (variant "passes") would be
+meaningless.
+
+**Decision.** E-001's matrix contains two anchors: `s-control` (must PASS) and
+`o3-fat-repro` (must CRASH). All other variant verdicts are trusted only when
+both anchors behave as expected. If `o3-fat-repro` does not crash, the same
+matrix is re-run on the owner's hardware before any conclusion or fix.
+
+**Rejected.** Trusting a matrix without anchors (risk: silently "fixing" a crash
+that still exists on hardware, shipping the exact v0.6.x failure mode again);
+skipping the control (saves ~1 build, loses harness sanity).
+
+**Risks accepted.** Two extra full builds (~4–6 runner-hours) per matrix run on
+a public repo (free runners) — cheap insurance against a wrong engine-profile
+decision.
 
 ---
 
-## D-007 — E-001 verdicts are trusted only when the two anchors render
+## D-008 — Guard verdicts come from observable process state, never from wrapper PIDs or unguarded `wait`
 
-**Date:** 2026-10-08 (originally defined in docs/EXPERIMENTS.md E-001 round 2).
+**Date:** 2026-10-08
 
-**Decision.** The codegen-matrix experiment has two anchor variants: `s-control`
-must PASS (alive) and `o3-fat-repro` must CRASH before ANY variant verdict is
-trusted. If the repro does not crash under CI software GL, the experiment moves
-to owner hardware before any codegen change is proposed. A cancelled/timeout
-anchor is neither PASS nor CRASH and yields no conclusion.
+**Context.** Two independent harness defects surfaced the same day. (1) The
+product smoke's RSS guardrail read `/proc/$PID/status` where `$PID` was the
+background `timeout(1)` process — always ~2 MB — so the 600 MB guardrail could
+never fail regardless of the browser's footprint. (2) E-001 round 1 (run
+37660240086) aborted inside `wait "$PID"` under `bash -e` in all five matrix
+jobs: the wait's non-zero exit (timeout-kill 124 or a crash signal 13x) is
+*data*, but `set -e` treats it as failure and killed the step before any
+verdict or evidence could be produced. Both gates reported — or would have
+reported — numbers disconnected from reality.
 
----
+**Decision.** In any CI gate or experiment harness: (a) sample process state
+from the process that actually owns it (`pgrep -x brow-shell`, not the
+wrapper's PID); (b) capture exit codes of meaningful-failure commands via
+guarded forms (`cmd || RC=$?`, `set +e` windows) and classify explicitly;
+(c) every verdict path must emit its evidence (summary lines, log copies,
+artifact uploads) before the step's exit status is decided. Applied in
+`c362e09da` (smoke RSS) and experiment-branch `90d74a22f` (E-001 round-2
+harness).
 
-## D-008 — RSS guardrails must sample the browser process, not a wrapper
+**Rejected.** Removing the RSS guardrail until Phase 4 (loses the only
+memory signal on every push); keeping round-1 results as "no crash observed"
+(verdicts without load evidence violate D-007 and could have written a false
+conclusion into the engine-profile decision).
 
-**Date:** 2026-10-08 (originally WORKLOG Phase 1.7, commit c362e09da).
+**Risks accepted.** `pgrep -x` depends on procps (standard on runners); the
+guarded-capture style is slightly more verbose. The hardened gates' first run
+must produce a *real* RSS number for example.com — if it trips 600 MB, that is
+signal, not noise, and gets recorded in RISKS/WORKLOG rather than tuned away.
 
-**Decision.** Memory guardrails in CI must read `/proc/<brow-pid>/status` of the
-actual browser process (evidenced by a `bs_pid=` field in the smoke output), not
-the `timeout`/`xvfb-run` wrapper (whose ~2 MB VmRSS made the original guardrail
-decorative). Applies to the product smoke and any future memory gates.
-
----
 
 ## D-009 — E-001 round 3: anchors-only re-dispatch, non-blocking for Phase 2
 
