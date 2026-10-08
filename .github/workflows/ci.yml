@@ -317,8 +317,11 @@ jobs:
             sleep 8   # let the first paint + compositor settle
             import -window root "'"$RUNNER_TEMP"'/brow-single-window.png" 2>/tmp/import.err
             RC=$?
+            # Kill by PID only — a `pkill -f "target/release/brow-shell"`
+            # here matches THIS bash -c's own command line (the pattern text
+            # is in it) and SIGTERMs the whole step (round-7 evidence:
+            # exit 143 after a good capture).
             kill "$BPID" 2>/dev/null
-            pkill -f "target/release/brow-shell" 2>/dev/null
             exit $RC
           '
           if [ -s "$RUNNER_TEMP/brow-single-window.png" ]; then
