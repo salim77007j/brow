@@ -113,9 +113,10 @@ jobs:
         # ("Unrecognized option: 'warm-up-time'") and fails the job.
         run: cargo bench -p brow-privacy --bench match_bench -- --warm-up-time 1 --measurement-time 3
 
-  # brow (phase 3): compile-gate the Slint chrome shell (desktop Linux).
+  # brow (v0.7, D-010): compile-gate the product shell (thin bin over the
+  # libified servoshell desktop shell) on desktop Linux.
   brow-shell-check:
-    name: Check brow-shell (Slint chrome + libservo embed)
+    name: Check brow-shell (servoshell-based single-window shell, D-010)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     defaults:

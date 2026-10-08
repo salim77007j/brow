@@ -57,7 +57,9 @@ use crate::window::{
     ServoShellWindowId,
 };
 
-pub(crate) const INITIAL_WINDOW_TITLE: &str = "Servo";
+pub(crate) fn initial_window_title() -> &'static str {
+    crate::shell::identity().window_title
+}
 
 pub struct HeadedWindow {
     /// The egui interface that is responsible for showing the user interface elements of
@@ -113,8 +115,11 @@ impl HeadedWindow {
     ) -> Rc<Self> {
         let no_native_titlebar = servoshell_preferences.no_native_titlebar;
         let inner_size = servoshell_preferences.initial_window_size;
+        // brow (D-010): window identity comes from the shell facade — servo
+        // defaults unless a product embedder set `shell::set_identity`.
+        let identity = crate::shell::identity();
         let window_attr = winit::window::Window::default_attributes()
-            .with_title(INITIAL_WINDOW_TITLE.to_string())
+            .with_title(identity.window_title.to_string())
             .with_decorations(!no_native_titlebar)
             .with_transparent(no_native_titlebar)
             .with_inner_size(LogicalSize::new(inner_size.width, inner_size.height))
@@ -128,7 +133,7 @@ impl HeadedWindow {
 
         // Set a name so it can be pinned to taskbars in Linux.
         #[cfg(target_os = "linux")]
-        let window_attr = window_attr.with_name("org.servo.Servo", "Servo");
+        let window_attr = window_attr.with_name(identity.wayland_app_id, identity.window_title);
 
         #[allow(deprecated)]
         let winit_window = event_loop
@@ -136,8 +141,7 @@ impl HeadedWindow {
             .expect("Failed to create window.");
 
         #[cfg(any(target_os = "linux", target_os = "windows"))]
-        {
-            let icon_bytes = include_bytes!("../../../resources/servo_64.png");
+        if let Some(icon_bytes) = identity.icon_png {
             winit_window.set_window_icon(Some(load_icon(icon_bytes)));
         }
 
@@ -210,7 +214,7 @@ impl HeadedWindow {
                 .then(Default::default),
             pending_keyboard_events: Default::default(),
             rendering_context,
-            last_title: RefCell::new(String::from(INITIAL_WINDOW_TITLE)),
+            last_title: RefCell::new(String::from(identity.window_title)),
             dialogs: Default::default(),
             visible_input_method: Default::default(),
             last_mouse_position: Default::default(),
@@ -843,7 +847,7 @@ impl PlatformWindow for HeadedWindow {
                     .filter(|title| !title.is_empty())
                     .or_else(|| webview.url().map(|url| url.to_string()))
             })
-            .unwrap_or_else(|| INITIAL_WINDOW_TITLE.to_string());
+            .unwrap_or_else(|| initial_window_title().to_string());
         if title != *self.last_title.borrow() {
             self.winit_window.set_title(&title);
             *self.last_title.borrow_mut() = title;

@@ -480,6 +480,20 @@ impl Gui {
                                         );
                                     }
 
+                                    // brow (D-011): optional embedder-provided status
+                                    // item (e.g. a privacy blocked counter). Servo's
+                                    // own shell registers no provider and renders
+                                    // nothing here.
+                                    if let Some(status_text) = crate::shell::status_item() {
+                                        let status =
+                                            ui.label(egui::RichText::new(status_text).small());
+                                        status.on_hover_text(
+                                            "Requests blocked by privacy protection \
+                                             (cumulative)",
+                                        );
+                                        ui.add_space(4.0);
+                                    }
+
                                     let location_id = egui::Id::new("location_input");
                                     let location_field = ui.add_sized(
                                         ui.available_size(),

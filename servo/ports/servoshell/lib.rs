@@ -21,6 +21,8 @@ mod parser;
 mod prefs;
 #[cfg(not(any(target_os = "android", target_env = "ohos")))]
 mod resources;
+#[cfg(not(any(target_os = "android", target_env = "ohos")))]
+pub mod shell;
 mod running_app_state;
 mod webdriver;
 mod window;

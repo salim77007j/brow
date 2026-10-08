@@ -3,59 +3,25 @@ name = "brow-shell"
 version = "0.1.0"
 edition = "2021"
 license = "MPL-2.0"
-description = "brow: Slint-chrome frontend embedding the Servo engine — tabs, address bar, bookmarks, history, downloads, settings, RTL Arabic UI"
+description = "brow: single-window product shell — a thin bin over the servoshell desktop shell (D-010) with brow identity, settings.json profile plumbing and the privacy status counter"
 repository = "https://github.com/salim77007j/brow"
-build = "build.rs"
 
-[package.metadata.notes]
-ui = "Slint 1.17 software renderer (headless-friendly, no GL required for chrome); 1.18+ blocked by mozjs icu_collections ~2.1 pin"
-
-[features]
-# brow (v0.6.1): default allocator is jemalloc — the path every shipped
-# binary (v0.6.0 servoshell) has used, verified to run on Linux CI, this
-# test harness and the tester's Windows machine. mimalloc v3.3.2 segfaulted
-# at engine init in the same environment ("memory allocation of 512 bytes
-# failed" right after mimalloc reserved 1 GiB), so the phase-3 mimalloc
-# default is demoted to an opt-in comparison feature. Re-enable it only
-# with a runtime A/B on real machines.
-default = ["servo-allocator/use-jemalloc", "engine"]
-# Opt-in: mimalloc as the global allocator (phase-3 experiment; tighter
-# size classes were expected to lower RSS, but it must be validated at
-# runtime before it can be a default again).
-brow-allocator-mimalloc = ["servo-allocator/use-mimalloc"]
-# Embed the Servo engine (content windows, WebView delegates). Turning this
-# off compiles only the Slint chrome stack for headless UI verification —
-# the engine code paths remain the ones CI builds.
-engine = ["dep:servo", "dep:webrender_api", "dep:rustls"]
-
-[build-dependencies]
-slint-build = "1.17.1"
+# brow v0.7 (D-010): the two-window Slint/softbuffer chrome stack is deleted.
+# This crate is now the product identity + profile layer over the proven
+# servoshell single-window shell (libified in-tree):
+#   * settings.json (brow-shell-core) -> engine Preferences + shell overrides
+#   * brow identity (title, app id, icon) via servoshell::shell::set_identity
+#   * privacy blocked counter via brow-privacy global atomics (D-011)
+# The CI contract is unchanged: binary name `brow-shell`, BROW_DATA_DIR +
+# settings.json schema, engine log markers, size gate.
 
 [dependencies]
-servo-allocator = { workspace = true }
 brow-shell-core = { workspace = true }
-brow-cache = { workspace = true }
-slint = { version = "1.17.1", default-features = false, features = ["std", "renderer-software", "compat-1-2"] }
-log = { workspace = true }
-env_logger = { workspace = true }
-rustls = { workspace = true, features = ["aws-lc-rs"], optional = true }
-serde_json = { workspace = true }
-url = { workspace = true }
-euclid = { workspace = true }
-keyboard-types = { workspace = true }
-image = { workspace = true }
-
-[target.'cfg(not(any(target_os = "android", target_env = "ohos")))'.dependencies]
-winit = { workspace = true }
-raw-window-handle = { workspace = true }
-softbuffer = "0.4.8"
-
-# Engine dependency: the same libservo servoshell embeds — with the SAME
-# feature set (v0.6.1 reassessment, fix 1.4): the previous config dropped
-# `js_jit` (SpiderMonkey ran interpreter-only — an order of magnitude slower)
-# and `bundled` (no embedded resources → the resource reader panics on the
-# first fetch). Feature parity with the shipped servoshell build means the
-# dependency graph is identical and the release build adds only link time.
+brow-privacy = { workspace = true }
+servoshell = { path = "../servoshell" }
+# Direct engine facade dep for the `Preferences`/`PrefValue` types and to pin
+# the features the product needs beyond servoshell's default set (feature
+# unification merges them into one servo build).
 servo = { workspace = true, default-features = false, features = [
     "background_hang_monitor",
     "bluetooth",
@@ -68,18 +34,6 @@ servo = { workspace = true, default-features = false, features = [
     "webgl",
     "webgpu",
     "webxr",
-], optional = true }
-webrender_api = { workspace = true, optional = true }
-
-[target.'cfg(target_os = "windows")'.dependencies]
-# brow (v0.6.1): Windows needs the ANGLE/D3D path (same as servoshell), not
-# the WGL fallback — AMD/iGPU driver compatibility depends on it.
-servo = { workspace = true, optional = true, features = ["no-wgl"] }
-surfman = { workspace = true, features = ["sm-angle-default"] }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-surfman = { workspace = true, features = ["sm-x11"] }
-
-[package.metadata.deb]
-depends = "$auto"
-section = "web"
+] }
+log = { workspace = true }
+env_logger = { workspace = true }

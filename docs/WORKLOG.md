@@ -424,3 +424,60 @@ existing richer D-006/D-007/D-008 sections with thinner backfills; both fixed
 in ce6a80542's follow-up: docs re-homed via targeted extraction, originals
 restored verbatim, only genuinely-new D-009 kept. Lesson: verify with the
 Grep tool / git show before assuming content is absent.
+
+---
+
+## 2026-10-08 · Phase 2.3 · Shell rebuild landed: brow-shell = thin bin over libified servoshell (D-010/D-011)
+
+**WHAT.**
+- servoshell facade (`ports/servoshell/shell.rs`, new, ~120 LOC): `ShellIdentity`
+  (window title / wayland app id / icon PNG), `ShellOverrides` (initial URL,
+  homepage, searchpage, wholesale `Preferences` replacement, engine config
+  dir), status-item provider hook, `run_from_args`. All default to servo
+  behavior — servo's own binary is unchanged when the embedder sets nothing.
+  `desktop` module visibility untouched (facade lives inside the crate).
+- `desktop/cli.rs`: `main()` split into `main()` + `pub(crate) run_from_args(args)`;
+  overrides applied after CLI parse, before any consumer.
+- `desktop/headed_window.rs`: title/app-id/icon now read from
+  `shell::identity()` (3 title sites incl. the dynamic set_title fallback;
+  icon becomes optional).
+- `desktop/gui.rs`: optional toolbar status item between the ☢ toggle and the
+  address bar (rendered only when a provider is registered).
+- `brow-privacy/src/stats.rs` (D-011): 5 process-global AtomicU64 mirrors
+  incremented inside the existing `record_*` methods (zero net-crate changes),
+  seeded from the persisted snapshot via `fetch_max`; `global_totals()` reader;
+  monotonic mirror test added.
+- `ports/brow-shell`: REWRITTEN as the thin product bin (~120 LOC main.rs):
+  profile dir resolution (unchanged BROW_DATA_DIR/XDG logic) → settings.json
+  (unchanged schema) → engine `Preferences` (the exact v0.6.1
+  `engine_preferences` mapping, builder-time) → identity + overrides + status
+  provider → `servoshell::shell::run_from_args`. DELETED: app.rs (1045),
+  platform.rs, state.rs, chrome.rs, keymap.rs (the 162-line hand keymap),
+  delegate.rs, waker.rs, lib.rs, build.rs, ui/browser.slint (521),
+  tests/ui_smoke.rs — the entire two-window Slint/softbuffer stack (2.2k LOC).
+  NEW: assets/brow_64.png (584 B procedural icon).
+- CI: brow-shell-check job name/comment updated; Cargo.lock hand-edited to the
+  minimal new edge set (brow-shell → {brow-privacy, servoshell, servo, log,
+  env_logger, brow-shell-core}) after `cargo metadata` proved too destructive
+  (it pruned 110 packages incl. other-target deps — reverted).
+
+**WHY.** D-010: servoshell already ships the single-window pattern end-to-end
+(egui GPU chrome, visible tab strip, real IME, DPI, throttling) and a lib
+target; forking it (Option A) or rebranding it in place (Option C) lose to the
+thin-bin shape on diff surface, maintenance, and upstream-merge cost. D-011:
+brow is a single-process embedder, so lock-free global atomics + a GUI
+provider hook replace any embedder/IPC stats plumbing.
+
+**VERIFIED.**
+- Syntax: rustfmt (pinned 1.97.1, edition 2024) parses all 7 touched Rust
+  files; my blocks fmt-clean (pre-existing let-chain drift in app.rs/
+  gui.rs:511/headed_window.rs:530+ intentionally left untouched — CI fmt gate
+  covers brow-net-core only, `|| true`).
+- Lock: valid TOML, 1172 packages, every brow-shell dep resolvable, no
+  multi-version suffix needed; `--locked` builds stay consistent.
+- Compile + smoke verification is CI's job on this push (D-003): local box is
+  2 CPU / 3 GB RAM — no local engine build attempted, per D-003.
+- CI contract preserved: bin name `brow-shell`; BROW_DATA_DIR + settings.json
+  schema; both engine markers (filter engine ← network_privacy_filter_enabled
+  from settings.block_ads; fingerprint defenses ← default "standard" level);
+  size gate (deleted Slint/softbuffer stack ≈ 10+ MiB lighter).
