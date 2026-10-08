@@ -349,3 +349,33 @@ partial archive + close ✓. Research-only phase: no product code changed on
 
 **VERIFIED.** Values read from the job log of run 37679599883 (Linux job) via
 the API; `bs_pid` present proves the D-008 sampling form is live.
+
+---
+
+## 2026-10-08 · Phase 2.0 · Start check: E-001 round-2 final (anchors cancelled), round-3 dispatched
+
+**WHAT.**
+- Session re-entry (third context reset): fresh clone verified — local `main`
+  HEAD `7cc97381` == GitHub `main` HEAD via authenticated API; `v0.7-rebuild`
+  checked out at `88382f9` (Phase 1 close + gate evidence). No local work lost.
+- E-001 round-2 final state read from the GitHub API (run 37678828465):
+  o3-nolto / o3-thin / o3-fat-mozjsO1 = **PASS-alive (green)**; s-control and
+  o3-fat-repro = **CANCELLED** after ~5.5 h inside `mach bootstrap` (GHA runner
+  flake — the same step took ~9 min in round 1). Neither anchor rendered a
+  verdict.
+- D-007 consequence: **no bisect conclusion from round 2**; the three PASS-alive
+  results remain observations only. EXPERIMENTS.md round-2 section marked FINAL
+  with the per-job evidence; R-01 mitigation updated.
+- Decision (this entry, D-009 form): re-dispatch round 3 with **anchors only**
+  (s-control + o3-fat-repro) plus a `mach bootstrap` retry hardening on the
+  experiment workflow; runs in the background, does not gate Phase 2 shell
+  work; outcome re-checked at the Phase 4 start check.
+
+**WHY.** PROCESS §6.3 requires the in-flight experiment state to be resolved
+before the next phase opens. The state is now resolved to "no verdict, re-run
+in background" — unambiguous, and honest about the fact that a cancelled anchor
+is neither PASS nor CRASH.
+
+**VERIFIED.** Job statuses (`completed/cancelled`, timestamps 01:31:36Z /
+01:31:41Z) read from the GitHub Actions API; local/GitHub HEAD equality read
+from the authenticated commits API.

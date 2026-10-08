@@ -72,7 +72,7 @@ experiment; update the Status line in place as results land, never rewrite histo
 Conclusion: ...
 -->
 
-### Round 2 — partial (3/5 verdicts; anchors pending on a stuck GHA runner)
+### Round 2 — FINAL (3/5 verdicts; anchors CANCELLED, no verdict rendered)
 
 Run [37678828465](https://github.com/salim77007j/brow/actions/runs/37678828465),
 dispatched 2026-10-08 20:01 UTC with the fixed harness.
@@ -82,8 +82,8 @@ dispatched 2026-10-08 20:01 UTC with the fixed harness.
 | o3-nolto (O3, no LTO, 16 CGU) | **PASS(alive 150s)** — job green | completed 20:27:40Z |
 | o3-thin (O3, thin LTO, 1 CGU) | **PASS(alive 150s)** — job green | completed 20:40:17Z |
 | o3-fat-mozjsO1 (O3, fat LTO, mozjs at O1) | **PASS(alive 150s)** — job green | completed 20:57:04Z |
-| s-control | *pending* | stuck >110 min in `mach bootstrap` (GHA infra flake, not brow code — same step took ~9 min in round 1) |
-| o3-fat-repro | *pending* | same |
+| s-control | **NO VERDICT (cancelled)** | stuck ~5.5 h in `mach bootstrap` (GHA infra flake — same step took ~9 min in round 1), hit the 330-min job timeout, cancelled 2026-10-08 01:31:36Z |
+| o3-fat-repro | **NO VERDICT (cancelled)** | same — cancelled 2026-10-08 01:31:41Z |
 
 - With the fixed harness, a green job **is** a rendered verdict: alive through
   the 150 s window, with load markers and log tail now emitted on every path.
@@ -101,3 +101,12 @@ dispatched 2026-10-08 20:01 UTC with the fixed harness.
   completes CRASH: the matrix is fully trusted, and the Phase 4 profile fix
   proceeds on the fat-LTO implication with the o3-thin/mozjsO1 data as the
   fallback ladder inputs.
+- **Round-2 final check (2026-10-08, Phase 2 start check, D-007 form):** both
+  anchor jobs ended `cancelled` after ~5.5 h inside `mach bootstrap` — GHA
+  runner flake, never reached a build, so neither anchor rendered a verdict.
+  Per D-007: **no bisect conclusion exists from round 2**; the three PASS-alive
+  variant results remain observations only. Decision recorded in WORKLOG:
+  round 3 re-dispatched with anchors only plus a bootstrap retry
+  (`experiment-codegen-matrix.yml` hardened on `experiment/o2o3-codegen`),
+  running in the background; Phase 2 shell work does not depend on it. The
+  round-3 outcome is re-checked at the Phase 4 start check.
