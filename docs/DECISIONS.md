@@ -129,87 +129,141 @@ class that bit v0.6.x); Linux-only CI (violates owner directive).
 **Risks accepted.** Long feedback loops during heavy phases; mitigated by
 batching pushes per sub-item (not per file) and relying on fast local gates.
 
----
+## D-006 — Binary size gate tightened 200 → 160 MiB on measured baseline
 
-## D-006 — Size gate tightened 200 → 160 MiB on measured baseline
+**Date:** 2026-10-08 (recorded here for register completeness; originally logged
+in WORKLOG Phase 1.5, commit 178080a0d).
 
-**Date:** 2026-10-08 · **Amends:** D-004 amendment
-
-**Context.** The D-004 amendment set a deliberately loose 200 MiB blind value and
-promised to tighten it once the real release-profile baseline was measured. The
-first gated run (`37652829943`, job `build-servo-linux`) measured **147 MiB**
-stripped, default-release-profile `brow-shell`.
-
-**Decision.** `SIZE_GATE_MIB = 160` in `ci.yml` (source of truth unchanged).
-Headroom: +13 MiB over measured baseline, covering the expected production-profile
-move (opt-3/thin is smaller than default release; PGO historically shrinks or is
-neutral) plus CJK font bundling in the payload (Phase 3). Production-stripped
-ships at ~105 MiB today; the shipped artifact stays well under the gate.
-
-**Rejected.** Keeping 200 (no longer a real constraint); 155 (too tight for
-PGO/LTO variance across toolchain bumps); measuring the gate on
-`production-stripped` instead (would rebuild the world twice per push for no
-extra safety — the default release is the superset config).
-
-**Risks accepted.** A toolchain bump that inflates codegen ≥9% would false-trip
-the gate; that friction is intentional — it forces a DECISIONS entry, not a
-silent gate raise.
+**Decision.** After the first gated CI run measured the stripped default-release
+`brow-shell` at 147 MiB, the every-push size gate was tightened from the blind
+200 MiB (D-004 amendment) to **160 MiB**. The gate prints the measured size into
+the job summary on every run.
 
 ---
 
-## D-007 — Bisect anchor rule for codegen experiments
+## D-007 — E-001 verdicts are trusted only when the two anchors render
+
+**Date:** 2026-10-08 (originally defined in docs/EXPERIMENTS.md E-001 round 2).
+
+**Decision.** The codegen-matrix experiment has two anchor variants: `s-control`
+must PASS (alive) and `o3-fat-repro` must CRASH before ANY variant verdict is
+trusted. If the repro does not crash under CI software GL, the experiment moves
+to owner hardware before any codegen change is proposed. A cancelled/timeout
+anchor is neither PASS nor CRASH and yields no conclusion.
+
+---
+
+## D-008 — RSS guardrails must sample the browser process, not a wrapper
+
+**Date:** 2026-10-08 (originally WORKLOG Phase 1.7, commit c362e09da).
+
+**Decision.** Memory guardrails in CI must read `/proc/<brow-pid>/status` of the
+actual browser process (evidenced by a `bs_pid=` field in the smoke output), not
+the `timeout`/`xvfb-run` wrapper (whose ~2 MB VmRSS made the original guardrail
+decorative). Applies to the product smoke and any future memory gates.
+
+---
+
+## D-009 — E-001 round 3: anchors-only re-dispatch, non-blocking for Phase 2
+
+**Date:** 2026-10-08 (Phase 2 start check; WORKLOG Phase 2.0).
+
+**Decision.** Round 2 ended with both anchors CANCELLED in a GHA `mach bootstrap`
+flake (no verdicts, D-007 ⇒ no conclusion). Re-dispatch round 3 with anchors
+only (`variant_set=anchors` input; bootstrap hardened with a 3×15-min retry) on
+`experiment/o2o3-codegen`; run in the background, do NOT gate Phase 2 shell work
+on it; re-check at the Phase 4 start check. The 3 PASS-alive variant results
+from round 2 remain observations, not verdicts.
+
+---
+
+## D-010 — Phase 2 shell rebuild: brow-shell becomes a thin bin over a libified servoshell (Option B)
 
 **Date:** 2026-10-08
 
-**Context.** E-001 (O2/O3 SIGSEGV bisect) runs on CI under Xvfb + software GL.
-The original v0.6.x crash repro was observed on real hardware. If the crash does
-not reproduce under software GL, negative results (variant "passes") would be
-meaningless.
+**Context.** Phase 1's deep read (V2_PLAN §3) plus this phase's full integration
+map of both shells established: servoshell already ships the single-window
+pattern end-to-end (WindowRenderingContext + OffscreenRenderingContext, egui
+GPU chrome, a visible egui tab strip at gui.rs:286-367/532-576, real IME at
+headed_window.rs:714-753, DPI at 567-588, keyboard ShortcutMatcher, brow's
+background-tab throttling already patched into WebViewCollection), and it
+already has a lib target whose `desktop` module is `pub(crate)`. brow-shell's
+2.2k LOC two-window Slint/softbuffer stack is the root cause of the v0.6.x
+failure class and cannot be polished into correctness. Local full builds are
+infeasible (sandbox: 2 CPU / 3 GB RAM); all engine verification runs in CI.
 
-**Decision.** E-001's matrix contains two anchors: `s-control` (must PASS) and
-`o3-fat-repro` (must CRASH). All other variant verdicts are trusted only when
-both anchors behave as expected. If `o3-fat-repro` does not crash, the same
-matrix is re-run on the owner's hardware before any conclusion or fix.
+**Options considered.**
+- **A. Fork servoshell desktop code into brow-shell** (copy-adapt ~4.4k LOC):
+  duplicates hard-won logic; every servoshell fix must be re-ported; immediate
+  divergence.
+- **B. brow-shell = thin bin over libified servoshell (CHOSEN):** make
+  `servoshell::desktop` reachable from the lib, parameterize identity (window
+  title, app id, icon, homepage/newtab defaults), brow-shell keeps its name and
+  CI contract, loads brow-shell-core Settings → ServoShellPreferences + engine
+  prefs, registers a status provider for the privacy counter, and calls the
+  facade. Smallest diff, free inheritance of future servoshell fixes, egui adds
+  ~1–2 MiB against the 160 MiB gate.
+- **C. Extend servoshell in place and ship it as the product bin:** pollutes the
+  vendored upstream tree with product identity; complicates every upstream
+  merge; rewrites CI packaging.
 
-**Rejected.** Trusting a matrix without anchors (risk: silently "fixing" a crash
-that still exists on hardware, shipping the exact v0.6.x failure mode again);
-skipping the control (saves ~1 build, loses harness sanity).
+**Decision.** Option B. Concretely: (1) `pub(crate) mod desktop` → `pub mod
+desktop` in servoshell lib.rs; (2) identity parameterization with servo
+defaults; (3) brow-shell/src/main.rs rebuilt as the thin bin (old app.rs /
+platform.rs / chrome.rs / keymap.rs / delegate.rs / state.rs / waker.rs /
+ui/browser.slint / build.rs Slint wiring / tests/ui_smoke.rs deleted);
+(4) feature union: brow-shell keeps a direct `servo` dep carrying the features
+servoshell's defaults lack (clipboard, brotli-compression-stream, webcrypto);
+(5) CI contract preserved: bin name `brow-shell`, settings.json schema, the two
+engine log markers, size gate.
 
-**Risks accepted.** Two extra full builds (~4–6 runner-hours) per matrix run on
-a public repo (free runners) — cheap insurance against a wrong engine-profile
-decision.
+**Rejected.** Option A (duplication); Option C (upstream pollution).
+
+**Risks accepted.** servoshell's extra deps (webdriver_server, tokio, bpaf,
+gilrs) enter the product link graph in Phase 2 — trimming is a Phase 4
+size/memory item. brows' bookmark/history/download stores and session restore
+are idle in Phase 2 (see D-012).
+
+**Rollback anchor.** `6856c1110` (pre-rebuild tip of `v0.7-rebuild`); the Slint
+stack can be restored from git history if the rebuild fails its gates.
 
 ---
 
-## D-008 — Guard verdicts come from observable process state, never from wrapper PIDs or unguarded `wait`
+## D-011 — Privacy blocked-counter: process-global atomics + GUI status provider
 
 **Date:** 2026-10-08
 
-**Context.** Two independent harness defects surfaced the same day. (1) The
-product smoke's RSS guardrail read `/proc/$PID/status` where `$PID` was the
-background `timeout(1)` process — always ~2 MB — so the 600 MB guardrail could
-never fail regardless of the browser's footprint. (2) E-001 round 1 (run
-37660240086) aborted inside `wait "$PID"` under `bash -e` in all five matrix
-jobs: the wait's non-zero exit (timeout-kill 124 or a crash signal 13x) is
-*data*, but `set -e` treats it as failure and killed the step before any
-verdict or evidence could be produced. Both gates reported — or would have
-reported — numbers disconnected from reality.
+**Context.** No privacy counter UI exists in any shell today. The engine's
+`PrivacyStats` (brow-privacy/src/stats.rs) holds five AtomicU64 counters
+incremented on the net thread (record_block / record_cname / record_cookie_*),
+persisted only at shutdown; no embedder-facing API exists. brow is a
+single-process embedder (libservo), so no IPC is needed to read counters.
 
-**Decision.** In any CI gate or experiment harness: (a) sample process state
-from the process that actually owns it (`pgrep -x brow-shell`, not the
-wrapper's PID); (b) capture exit codes of meaningful-failure commands via
-guarded forms (`cmd || RC=$?`, `set +e` windows) and classify explicitly;
-(c) every verdict path must emit its evidence (summary lines, log copies,
-artifact uploads) before the step's exit status is decided. Applied in
-`c362e09da` (smoke RSS) and experiment-branch `90d74a22f` (E-001 round-2
-harness).
+**Decision.** (1) brow-privacy gains process-global mirror atomics incremented
+inside the existing `record_*` methods (zero changes to components/net call
+sites) plus a lock-free `global_totals()` snapshot reader. (2) servoshell's GUI
+gains a neutral extension point — a settable status-item provider callback
+(default None, servo behavior unchanged); brow's bin registers a provider that
+formats the blocked total (🛡 N) from brow-privacy globals. servoshell stays
+decoupled from brow-privacy.
 
-**Rejected.** Removing the RSS guardrail until Phase 4 (loses the only
-memory signal on every push); keeping round-1 results as "no crash observed"
-(verdicts without load evidence violate D-007 and could have written a false
-conclusion into the engine-profile decision).
+**Rejected.** EmbedderEvent/IP plumb through constellation→embedder (invasive,
+larger diff, not needed in a single-process embedder); polling
+privacy_stats.json (only persisted at shutdown — useless).
 
-**Risks accepted.** `pgrep -x` depends on procps (standard on runners); the
-guarded-capture style is slightly more verbose. The hardened gates' first run
-must produce a *real* RSS number for example.com — if it trips 600 MB, that is
-signal, not noise, and gets recorded in RISKS/WORKLOG rather than tuned away.
+---
+
+## D-012 — Phase 2 keeps servoshell tab/throttle semantics; brow extras re-layer in Phase 3/4
+
+**Date:** 2026-10-08
+
+**Decision.** Phase 2 ships servoshell's WebViewCollection semantics (activate/
+throttle/hide) as-is. Deferred with a re-layer plan: (a) brow TabManager
+sleep/discard (memory lever) → Phase 4 (R-06 memory work) layered on
+WebViewCollection — background-tab CPU throttling is retained via servoshell;
+(b) bundled Noto CJK/Arabic font installer (platform.rs) → Phase 3 font bundle
+work (servoshell uses system fonts meanwhile); (c) session.json restore →
+re-layered on servoshell after Phase 2 validation (settings key retained);
+(d) Slint L10n (En/Ar) UI strings → Phase 3 (the egui chrome ships English-only
+in Phase 2; page-content RTL is an engine concern, unaffected). Each deferral
+is recorded in RISKS.md and re-visited at its phase start.

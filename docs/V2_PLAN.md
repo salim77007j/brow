@@ -279,3 +279,33 @@ What Firefox/Chromium actually do for the four areas brow must redo in Phases
 - Implication: PGO adoption is gated on the same 20-site smoke suite as the
   codegen fix (§6 Phase 4), never adopted blind; training commands live in a
   checked-in script, not tribal memory.
+
+---
+
+## 9. Phase 2 design addendum (2026-10-08, integration map + decision)
+
+Phase 2's full code integration map (both shells read to function/line level)
+established two corrections to §3's assumptions and picked the rebuild shape:
+
+- **The visible tab strip already exists in servoshell on this branch**
+  (`desktop/gui.rs:286-367` `browser_tab` widget, `gui.rs:532-576` tab panel,
+  click-activate + middle-click close + "+" new tab). §3.5's "needs a visible
+  tab bar widget" is already satisfied; Phase 2 ports brow identity onto it
+  instead of building one.
+- **servoshell already has a lib target** (`Cargo.toml:13-16`) with `desktop`
+  `pub(crate)` (`lib.rs:14-15`) — the libification is 90% done.
+
+**Chosen shape (D-010, Option B):** brow-shell becomes a thin product bin over a
+libified servoshell — `pub mod desktop`, identity parameterized (title/app-id/
+icon/homepage defaults, servo defaults preserved), brow-shell keeps its CI
+contract (bin name, settings.json, engine log markers, size gate) and links
+brow-shell-core (Settings) + brow-privacy (D-011 global-atomics privacy counter
+via a servoshell GUI status-provider hook). The 2.2k LOC two-window Slint/
+softbuffer stack is deleted (git history is the rollback). Tab sleep/discard,
+bundled fonts, session restore, and Slint L10n are deferred per D-012 with
+re-layer plans.
+
+Touch surface: ~6 servoshell files modified, brow-shell rewritten thin (~1.2k
+→ ~0.3k LOC shell-side), brow-privacy +stats, components/net untouched.
+Verification: CI only (D-003) — Linux full build + smoke + Windows build on
+every push.

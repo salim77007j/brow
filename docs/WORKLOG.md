@@ -379,3 +379,41 @@ is neither PASS nor CRASH.
 **VERIFIED.** Job statuses (`completed/cancelled`, timestamps 01:31:36Z /
 01:31:41Z) read from the GitHub Actions API; local/GitHub HEAD equality read
 from the authenticated commits API.
+---
+
+## 2026-10-08 · Phase 2.1/2.2 · Integration map + rebuild design locked (D-010..D-012)
+
+**WHAT.**
+- Round 3 dispatched: run 37772420248 (anchors only — verified job list =
+  select-variants + s-control + o3-fat-repro; harness fix history: job-level
+  `if: matrix.anchor` is illegal in GitHub Actions because matrix expansion
+  happens after job-if evaluation — attempt 1 failed to parse with
+  "Unrecognized named-value: 'matrix'", fixed with the documented
+  dynamic-matrix pattern via a select-variants setup job, commits 24062fb48,
+  5ff84a3dc on `experiment/o2o3-codegen`).
+- Full integration map of brow-shell vs servoshell produced (file/line level,
+  in-session). Headline findings: servoshell on this branch ALREADY has a
+  visible egui tab strip (gui.rs:286-367, 532-576) and already carries brow's
+  background-tab throttling (running_app_state.rs:141-153); servoshell has a
+  lib target with `desktop` pub(crate); NO blocked-counter UI exists anywhere;
+  the engine log markers CI greps come from components/net/privacy.rs:172 and
+  components/script/dom/userscripts.rs:49.
+- Design locked: D-010 (Option B — brow-shell = thin bin over libified
+  servoshell; identity parameterized; Slint/softbuffer stack deleted),
+  D-011 (privacy counter = process-global atomics in brow-privacy record_*
+  methods + servoshell GUI status-provider hook; no IPC), D-012 (deferrals
+  with re-layer plans: tab discard → Phase 4, fonts/L10n → Phase 3, session
+  restore → post-Phase-2). D-006..D-009 backfilled into DECISIONS.md for
+  register completeness. V2_PLAN §9 addendum written.
+
+**WHY.** D-003 makes CI the only verification path for engine-touching work, so
+the design minimizes diff surface and leans on servoshell's proven, in-tree,
+already-brow-patched code instead of forking it (Option A rejected: duplicated
+4.4k LOC, permanent port tax). The privacy counter needs an engine surface
+under every option; the single-process embedder makes global atomics the
+minimal lock-free one.
+
+**VERIFIED.** Round-3 job list read from the GitHub Actions API (3 jobs: 1
+select + 2 anchors, both in_progress). Integration-map claims carry file:line
+refs read directly in this session. Decisions D-010..D-012 recorded in
+docs/DECISIONS.md before any rebuild code was written.
