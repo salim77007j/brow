@@ -616,3 +616,57 @@ written to force.
 **VERIFIED.** Both job conclusions + timestamps read from the GitHub Actions
 API; verdicts derive from timeout(1) exit status under the round-2-fixed
 harness (round-3 s-control sanity anchor green).
+
+---
+
+## 2026-10-09 · Phase 0 re-entry · sandbox reset recovered with zero loss; Phase 0 audit re-verified (10/10)
+
+**WHAT.**
+- Sandbox was reset between sessions (expected per R-10). Recovery drill
+  executed exactly per PROCESS.md §1: fresh clone of
+  `github.com/salim77007j/brow`, remote baseline captured BEFORE clone via
+  `git ls-remote` → `main = 7cc97381a378f117d3e713ad661df408861d1637`; local
+  `git rev-parse HEAD` matched exactly → clone integrity VERIFIED.
+- Local `v0.7-rebuild` reset to `origin/v0.7-rebuild` (`55da9d7aa`) — the
+  branch history from prior sessions is adopted as ground truth; nothing was
+  rewritten or force-pushed.
+- Credentials re-established at `/home/z/.git-credentials` (chmod 600, outside
+  any repository — the PAT is never committed).
+- Phase 0 audit re-run against the branch artifacts, all 10 owner sub-items:
+  - 0.1 environment/work protection — PROCESS.md §1 + this entry (drill worked,
+    loss budget zero commits) ✓
+  - 0.2 branch protection — `v0.7-rebuild` sole product branch; main untouched
+    except verified docs commit; R-08 tracks the API-enforcement gap honestly ✓
+  - 0.3 build safety — PROCESS.md §3 verification ladder + revert-first rule +
+    160 MiB size gate (D-004/D-006) ✓
+  - 0.4 change isolation — PROCESS.md §4 one-logical-change-per-commit ✓
+  - 0.5 experiment safety — `docs/EXPERIMENTS.md` + `experiment/<topic>`
+    branches + E-001 rounds 1–3 recorded under D-007 anchor rule ✓
+  - 0.6 rollback plan — PROCESS.md §2 rollback points (`7cc97381a` safe point),
+    <5 min revert drill with verification steps (D-002) ✓
+  - 0.7 automated quality gates — `.github/workflows/ci.yml` (451 lines): 3
+    fast-test jobs, shell-check, clippy+fmt, Linux engine+product build, size
+    gate 160 MiB, Xvfb smoke (example.com + "filter engine loaded" +
+    "fingerprint defenses active" + RSS guardrail), headed screenshot capture,
+    Windows full build ✓
+  - 0.8 incremental verification — PROCESS.md §6 loop; WORKLOG shows per-subtask
+    verification records through Phase 2 ✓
+  - 0.9 decision records — `docs/DECISIONS.md` D-001..D-012, ADR format ✓
+  - 0.10 risk register — `docs/RISKS.md` R-01..R-14 (L/I/mitigation/status) +
+    phase-end checklist ✓
+- A docs-only commit was made on `main` during re-entry (74bb0e9e2, fresh-clone
+  work log) before the branch was discovered intact; it is benign (docs only)
+  and will be superseded by the branch WORKLOG at merge time.
+
+**WHY.** The owner directive "Begin with Phase 0 now" is satisfied by
+verification: Phase 0 was completed and pushed by prior sessions; re-creating
+it would risk regressions and rewrite history. The risk-managed response to a
+reset is to re-verify, not to redo.
+
+**VERIFIED.** Every claim above points at a file in this repo (PROCESS.md,
+EXPERIMENTS.md, DECISIONS.md, RISKS.md, ci.yml) or a git SHA. Program state:
+Phase 2 CLOSED (CI 7/7 green incl. Windows, size 149 MiB, single-window visual
+evidence in `docs/evidence/phase2-single-window/`); E-001 round-3 negative
+reproduction on CI → repro moved to owner hardware per D-007; gates now await
+owner Windows validation of Phase 2 and the owner's "continue" for Phase 3
+(IME/CJK/RTL/fonts).
