@@ -110,3 +110,26 @@ dispatched 2026-10-08 20:01 UTC with the fixed harness.
   (`experiment-codegen-matrix.yml` hardened on `experiment/o2o3-codegen`),
   running in the background; Phase 2 shell work does not depend on it. The
   round-3 outcome is re-checked at the Phase 4 start check.
+
+### Round 3 — FINAL (anchors only; repro does NOT reproduce under CI software GL)
+
+Run [37772420248](https://github.com/salim77007j/brow/actions/runs/37772420248),
+dispatched 2026-10-08 11:47 UTC with the hardened harness (anchors-only input,
+bootstrap retry) — both anchors rendered verdicts:
+
+| Variant | Verdict | Evidence |
+|---|---|---|
+| s-control (shipped: opt "s" + fat LTO) | **PASS(alive 150s)** — job green | completed 12:14:57Z |
+| o3-fat-repro (opt 3 + fat LTO, the crashing config) | **PASS(alive 150s)** — job green | completed 12:19:12Z |
+
+- **Anchor rule outcome (D-007):** s-control PASSED but o3-fat-repro PASSED
+  where a CRASH was required. The wikipedia SIGSEGV therefore **does not
+  reproduce under CI software GL** — the round-2 PASS-alive observations are
+  consistent, and no codegen conclusion can be drawn from CI alone.
+- **Consequence (recorded in WORKLOG Phase 2.6):** per D-007 the repro moves
+  to owner hardware with the same matrix before any codegen change is
+  proposed. Phase 4's profile fix proceeds only after that owner-hardware
+  repro exists (or is shown to depend on real-GPU/driver state); the
+  fallback ladder (o3-thin → mozjsO1 → ship opt-"s") remains the safe
+  landing plan. Round-2's three PASS-alive variant results stand as
+  observations, now anchored by a sane s-control.

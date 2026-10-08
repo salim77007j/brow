@@ -592,3 +592,27 @@ capture), IME smoke. Phase 3 (IME/CJK/RTL/fonts) opens after the owner's
 inspected (1280×800 PNG, window chrome + counter + tabs visible); per-round
 logs read from the GitHub Actions API; gate numbers from the job summary
 lines quoted verbatim above.
+
+---
+
+## 2026-10-08 · Phase 2.6 · E-001 round-3 verdicts: crash does NOT reproduce on CI — repro moves to owner hardware (D-007)
+
+**WHAT.**
+- Round 3 (run 37772420248, anchors only) completed: s-control **PASS(alive
+  150s)** and o3-fat-repro **PASS(alive 150s)** — the second is the decisive
+  one: the config that SIGSEGVs on owner hardware (opt 3 + fat LTO,
+  wikipedia repro) stayed up through the whole window on CI.
+- D-007 consequence applied: the crash does not reproduce under CI software
+  GL, so the repro moves to owner hardware (same matrix, same harness) at
+  the owner's convenience; no codegen change is proposed from CI evidence.
+  EXPERIMENTS.md round-3 section written; R-01 updated (IN-PROGRESS, owner
+  repro pending).
+
+**WHY.** An anchor that fails to crash is not a failed experiment — it is a
+negative reproduction result that redirects the hunt to the environment that
+actually exhibits the bug (real GPU/driver state), exactly what D-007 was
+written to force.
+
+**VERIFIED.** Both job conclusions + timestamps read from the GitHub Actions
+API; verdicts derive from timeout(1) exit status under the round-2-fixed
+harness (round-3 s-control sanity anchor green).
