@@ -309,8 +309,11 @@ jobs:
             sleep 1
           done
           sleep 8   # let the first paint + compositor settle
-          DISPLAY=$(ls /tmp/.X11-unix/ 2>/dev/null | head -1 | sed 's/^/:/')
-          if DISPLAY=":$DISPLAY" timeout 20 import -window root "$RUNNER_TEMP/brow-single-window.png" 2>/tmp/import.err; then
+          # /tmp/.X11-unix lists sockets named X<N>; the display is ":<N>"
+          # (a naive ":X<N>" fails — round-5 evidence: "unable to open X
+          # server `::X99'").
+          DISPLAY_NUM=$(ls /tmp/.X11-unix/ 2>/dev/null | head -1 | sed 's/^X//')
+          if DISPLAY=":${DISPLAY_NUM}" timeout 20 import -window root "$RUNNER_TEMP/brow-single-window.png" 2>/tmp/import.err; then
             SIZE=$(stat -c%s "$RUNNER_TEMP/brow-single-window.png" || echo 0)
             echo "headed shell screenshot OK: $SIZE bytes" | tee -a "$GITHUB_STEP_SUMMARY"
             cp "$RUNNER_TEMP/brow-single-window.png" "$GITHUB_WORKSPACE/brow-single-window.png"
