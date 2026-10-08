@@ -91,7 +91,10 @@ pub fn set_status_provider(provider: Option<fn() -> Option<String>>) {
 /// The current status item, if a provider is registered and produced one.
 /// Called once per egui frame from the toolbar.
 pub(crate) fn status_item() -> Option<String> {
-    STATUS_PROVIDER.get().and_then(|provider| provider?())
+    match STATUS_PROVIDER.get() {
+        Some(Some(provider)) => provider(),
+        _ => None,
+    }
 }
 
 /// Run the desktop shell with the given argument vector (no binary name).
