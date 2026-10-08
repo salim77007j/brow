@@ -512,3 +512,40 @@ enforced with an honest documented band).
 113314728628/libudev; budget failure stdout line captured verbatim);
 cross-run comparison on identical brow-privacy code; rustfmt parses the
 edited test file.
+
+---
+
+## 2026-10-08 · Phase 2.4 · CI verification of the rebuild: 7/7 green + evidence step
+
+**WHAT.**
+- Convergence record for the rebuild's CI rounds (all on the gated pipeline,
+  fast-gates-first):
+  - Round 1 (9fac7ed63): 3/5 fast gates green; brow-shell-check red
+    (libudev), brow-privacy red (budget flake). Engine builds skipped.
+  - Round 2 (193e29bd5): libudev-dev added; check advanced to a genuine
+    compile error in the new facade (E0277 `?` on `&Option<fn>`,
+    shell.rs:94); brow-privacy suite green including the de-flaked budget
+    test.
+  - Round 3 (48aed91f5): E0277 fixed (explicit nested-Option match,
+    pattern verified standalone with rustc on the pinned toolchain);
+    check advanced to one E0425 in brow-shell's bin (global_totals path).
+    servoshell lib + the entire engine graph checked CLEAN.
+  - Round 4 (d5956725c): **all 7 jobs GREEN** — Windows x86_64 engine +
+    brow-shell build (ANGLE path), Linux engine + brow-shell, size gate
+    149 MiB ≤ 160, product smoke `signals=1 alive=yes bs_pid=56408
+    rss_kb=380500` (371.6 MiB software-GL < 600 MB guardrail), servoshell
+    headless render OK (131,933-byte PNG of example.com).
+- Evidence step added (this push): a headed Xvfb run of the product shell
+  with a root-window capture (`import`), uploaded as the
+  `brow-single-window-screenshot` artifact — the Phase 2 deliverable is
+  visual, and R-04's mitigation requires before/after screenshots; the
+  artifact will be committed into docs/evidence/ at close.
+
+**WHY.** D-003 makes CI the verification path for engine-touching code; the
+four rounds are the honest cost of writing blind against a 3 GB sandbox.
+Visual deliverables do not close on marker greps alone (v0.6.1 died on
+visuals).
+
+**VERIFIED.** Per-round job conclusions + logs read from the GitHub Actions
+API; standalone rustc check of the fixed pattern; YAML validated on every
+workflow edit.

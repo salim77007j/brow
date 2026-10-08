@@ -283,6 +283,44 @@ jobs:
             exit 1
           fi
 
+      - name: Evidence — headed single-window shell screenshot (Phase 2, R-04)
+        # The Phase 2 deliverable is visual (GPU-drawn toolbar + tab strip in
+        # ONE window). Run the product shell headed under Xvfb, wait for the
+        # engine signals, then capture the root window. The screenshot is
+        # uploaded as an artifact and committed into docs/evidence/ at phase
+        # close. Best-effort capture: a screenshot tool failure must not mask
+        # a green smoke, but the artifact's absence would be visible.
+        run: |
+          sudo apt-get update && sudo apt-get install -y x11-apps imagemagick
+          cd servo
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-brow"; mkdir -p "$XDG_RUNTIME_DIR"
+          if [ -f /usr/share/glvnd/egl_vendor.d/50_mesa.json ]; then
+            export __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json
+          fi
+          export BROW_DATA_DIR="$RUNNER_TEMP/brow-data"; mkdir -p "$BROW_DATA_DIR"
+          printf '{"home_page": "https://example.com", "block_ads": true}\n' > "$BROW_DATA_DIR/settings.json"
+          RUST_LOG=info timeout 75 xvfb-run -a -s "-screen 0 1280x800x24" \
+            target/release/brow-shell > "$RUNNER_TEMP/brow-shot.log" 2>&1 &
+          PID=$!
+          for i in $(seq 1 60); do
+            grep -q "fingerprint defenses active" "$RUNNER_TEMP/brow-shot.log" 2>/dev/null && break
+            kill -0 "$PID" 2>/dev/null || break
+            sleep 1
+          done
+          sleep 8   # let the first paint + compositor settle
+          DISPLAY=$(ls /tmp/.X11-unix/ 2>/dev/null | head -1 | sed 's/^/:/')
+          if DISPLAY=":$DISPLAY" timeout 20 import -window root "$RUNNER_TEMP/brow-single-window.png" 2>/tmp/import.err; then
+            SIZE=$(stat -c%s "$RUNNER_TEMP/brow-single-window.png" || echo 0)
+            echo "headed shell screenshot OK: $SIZE bytes" | tee -a "$GITHUB_STEP_SUMMARY"
+            cp "$RUNNER_TEMP/brow-single-window.png" "$GITHUB_WORKSPACE/brow-single-window.png"
+          else
+            echo "headed shell screenshot FAILED:"; cat /tmp/import.err || true
+            tail -20 "$RUNNER_TEMP/brow-shot.log" || true
+          fi
+          kill "$PID" 2>/dev/null || true
+          pkill -f 'target/release/brow-shell' 2>/dev/null || true
+
       - name: Smoke test — binary runs
         # The workspace's default member is ports/servoshell; its binary is
         # named `servoshell` (see ports/servoshell/Cargo.toml [[bin]]).
@@ -326,6 +364,15 @@ jobs:
           name: brow-servo-linux-x86_64
           path: ${{ runner.temp }}/brow-servo-linux-x86_64.tar.gz
           retention-days: 14
+
+      - name: Upload headed-shell screenshot (Phase 2 evidence)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: brow-single-window-screenshot
+          path: brow-single-window.png
+          if-no-files-found: ignore
+          retention-days: 30
 
   # Phase 0 (owner directive 0.7, DECISIONS D-005): Windows must compile on
   # every push. The v0.6.x failure class (Windows-only FFI/allocator/GPU
