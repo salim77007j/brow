@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<!-- Phase 3 i18n evidence page (D-013): deterministic, no network.
+     Loaded via file:// by the CI evidence step and by the owner test
+     protocol (docs/OWNER_TESTS_PHASE3.md). Renders Latin, Simplified
+     Chinese, Japanese kana, Arabic (RTL) and Hebrew (RTL) plus a text
+     input. Expected after the bundled-font work: every line shows real
+     glyphs, no tofu boxes. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>brow i18n evidence — Phase 3</title>
+<style>
+  body { font-family: sans-serif; margin: 2em; }
+  .row { margin: 0.6em 0; font-size: 1.15em; }
+  .label { color: #666; font-size: 0.8em; margin-right: 1em; }
+  input { font-size: 1em; padding: 4px; width: 24em; }
+  h1 { font-size: 1.3em; }
+</style>
+</head>
+<body>
+<h1>brow i18n evidence — Phase 3 (fonts / RTL / DPI)</h1>
+<div class="row"><span class="label">Latin</span>The quick brown fox jumps over the lazy dog 0123456789</div>
+<div class="row" lang="zh-CN"><span class="label">zh-CN</span>你好，世界。浏览器应显示汉字而不是方框（中文测试）。</div>
+<div class="row" lang="ja"><span class="label">ja</span>こんにちは世界。ひらがなとカタカナのテスト（日本語）。</div>
+<div class="row" lang="ar" dir="rtl"><span class="label">ar (RTL)</span>مرحبا بالعالم — اختبار النص العربي والاتجاه من اليمين إلى اليسار</div>
+<div class="row" lang="he" dir="rtl"><span class="label">he (RTL)</span>שלום עולם — בדיקת כיוון מימין לשמאל וטקסט עברי</div>
+<div class="row" lang="zh-CN"><span class="label">Enclosed</span>①②③ 与全角：ＡＢＣ１２３、句读符号：「测试」。</div>
+<div class="row">
+  <span class="label">input</span>
+  <input type="text" value="你好 مرحبا こんにちは">
+</div>
+</body>
+</html>

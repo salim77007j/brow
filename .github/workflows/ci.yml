@@ -336,6 +336,70 @@ jobs:
             tail -20 "$RUNNER_TEMP/brow-shot.log" || true
           fi
 
+      - name: Evidence — i18n fonts + 2x DPI (Phase 3, D-013)
+        # Phase 3 evidence: with the bundled payload fonts in place, CJK/
+        # Arabic/Hebrew must render in BOTH the egui chrome and engine
+        # content on a runner that ships no CJK/Arabic fonts. The payload
+        # fonts/ dir is placed next to the binary so (a) the step-0
+        # installer copies it into ~/.local/share/fonts/brow (engine —
+        # fontconfig) and (b) egui loads it exe-relative. Two captures:
+        # default scale, and --device-pixel-ratio 2.0 for the DPI path
+        # (V2_PLAN §3.4). Captures run inside ONE xvfb-run session each
+        # (round-6), no apostrophes in the inner script (round-9), kill by
+        # PID only (round-7), best-effort so a capture bug cannot mask a
+        # green build. Committed to docs/evidence/phase3-i18n/ at close.
+        run: |
+          sudo apt-get update && sudo apt-get install -y imagemagick
+          cd servo
+          cp -R "$GITHUB_WORKSPACE/servo/ports/brow-shell/assets/fonts" target/release/fonts
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-brow-i18n"; mkdir -p "$XDG_RUNTIME_DIR"
+          if [ -f /usr/share/glvnd/egl_vendor.d/50_mesa.json ]; then
+            export __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json
+          fi
+          export BROW_DATA_DIR="$RUNNER_TEMP/brow-data-i18n"; mkdir -p "$BROW_DATA_DIR"
+          printf '{"home_page": "file://%s", "block_ads": true}\n' "$GITHUB_WORKSPACE/docs/evidence/phase3-i18n/i18n-test.html" > "$BROW_DATA_DIR/settings.json"
+          xvfb-run -a -s "-screen 0 1280x800x24" bash -c '
+            set +e
+            RUST_LOG=info target/release/brow-shell > "'"$RUNNER_TEMP"'/brow-i18n.log" 2>&1 &
+            BPID=$!
+            for i in $(seq 1 60); do
+              grep -q "fingerprint defenses active" "'"$RUNNER_TEMP"'/brow-i18n.log" 2>/dev/null && break
+              kill -0 "$BPID" 2>/dev/null || break
+              sleep 1
+            done
+            sleep 10
+            import -window root "'"$RUNNER_TEMP"'/brow-i18n.png" 2>/tmp/import-i18n.err
+            RC=$?
+            [ -s /tmp/import-i18n.err ] && cat /tmp/import-i18n.err
+            kill "$BPID" 2>/dev/null
+            exit $RC
+          ' || echo "i18n capture exited nonzero — best-effort"
+          xvfb-run -a -s "-screen 0 1280x800x24" bash -c '
+            set +e
+            RUST_LOG=info target/release/brow-shell --device-pixel-ratio 2.0 > "'"$RUNNER_TEMP"'/brow-dpi2.log" 2>&1 &
+            BPID=$!
+            for i in $(seq 1 60); do
+              grep -q "fingerprint defenses active" "'"$RUNNER_TEMP"'/brow-dpi2.log" 2>/dev/null && break
+              kill -0 "$BPID" 2>/dev/null || break
+              sleep 1
+            done
+            sleep 10
+            import -window root "'"$RUNNER_TEMP"'/brow-dpi2x.png" 2>/tmp/import-dpi.err
+            RC=$?
+            [ -s /tmp/import-dpi.err ] && cat /tmp/import-dpi.err
+            kill "$BPID" 2>/dev/null
+            exit $RC
+          ' || echo "DPI capture exited nonzero — best-effort"
+          for f in brow-i18n.png brow-dpi2x.png; do
+            if [ -s "$RUNNER_TEMP/$f" ]; then
+              cp "$RUNNER_TEMP/$f" "$GITHUB_WORKSPACE/$f"
+              echo "$f captured: $(stat -c%s "$GITHUB_WORKSPACE/$f") bytes" | tee -a "$GITHUB_STEP_SUMMARY"
+            else
+              echo "$f MISSING (capture failed — see logs)" | tee -a "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+
       - name: Smoke test — binary runs
         # The workspace's default member is ports/servoshell; its binary is
         # named `servoshell` (see ports/servoshell/Cargo.toml [[bin]]).
@@ -386,6 +450,17 @@ jobs:
         with:
           name: brow-single-window-screenshot
           path: brow-single-window.png
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload i18n + DPI evidence screenshots (Phase 3)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: brow-phase3-i18n-screenshots
+          path: |
+            brow-i18n.png
+            brow-dpi2x.png
           if-no-files-found: ignore
           retention-days: 30
 
