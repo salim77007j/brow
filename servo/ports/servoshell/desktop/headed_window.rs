@@ -44,6 +44,7 @@ use {
 };
 
 use super::geometry::{winit_position_to_euclid_point, winit_size_to_euclid_size};
+use super::ime::{ImeAction, ImeSessionTracker};
 use super::keyutils::{CMD_OR_ALT, keyboard_event_from_winit};
 use crate::desktop::accelerated_gl_media::setup_gl_accelerated_media;
 use crate::desktop::dialog::Dialog;
@@ -101,6 +102,14 @@ pub struct HeadedWindow {
     /// The [`EmbedderControlId`] of the currently showing [`InputMethod`] interfaces,
     /// if one is showing.
     visible_input_method: Cell<Option<EmbedderControlId>>,
+    /// brow (Phase 4.3): IME composition-session state machine. Windows/winit
+    /// sends `Ime::Disabled` after every commit — it must not blur the
+    /// focused editable. See `super::ime` for the mapping table.
+    ime_session: RefCell<ImeSessionTracker>,
+    /// brow (Phase 4.3): the last IME cursor area given to
+    /// `set_ime_cursor_area`, re-asserted on every `Ime::Preedit` so the
+    /// candidate window stays anchored to the focused field.
+    last_ime_cursor_area: Cell<Option<(LogicalPosition<i32>, LogicalSize<i32>)>>,
     /// The position of the mouse cursor after the most recent `MouseMove` event.
     last_mouse_position: Cell<Option<Point2D<f32, DeviceIndependentPixel>>>,
 }
@@ -217,6 +226,8 @@ impl HeadedWindow {
             last_title: RefCell::new(String::from(identity.window_title)),
             dialogs: Default::default(),
             visible_input_method: Default::default(),
+            ime_session: Default::default(),
+            last_ime_cursor_area: Default::default(),
             last_mouse_position: Default::default(),
         })
     }
@@ -459,16 +470,24 @@ impl HeadedWindow {
 
         let position = input_method.position();
         self.winit_window.set_ime_allowed(true);
-        self.winit_window.set_ime_cursor_area(
-            LogicalPosition::new(
-                position.min.x,
-                position.min.y + (self.toolbar_height().0 as i32),
-            ),
-            LogicalSize::new(
-                position.max.x - position.min.x,
-                position.max.y - position.min.y,
-            ),
+        let cursor_origin = LogicalPosition::new(
+            position.min.x,
+            position.min.y + (self.toolbar_height().0 as i32),
         );
+        let cursor_size = LogicalSize::new(
+            position.max.x - position.min.x,
+            position.max.y - position.min.y,
+        );
+        self.last_ime_cursor_area
+            .set(Some((cursor_origin, cursor_size)));
+        // brow (Phase 4.3): egui-winit 0.34 re-calls `set_ime_allowed(ime.is_some())`
+        // on every egui pass, debounced against a private flag that never learns
+        // about this direct call — the next pass with an unfocused URL bar would
+        // disable IME delivery and turn every keystroke into raw WM_CHAR
+        // fragments ("separated words, no preedit" on owner hardware). Recording
+        // `false` makes its debouncer a no-op while the page owns the IME.
+        self.gui.borrow().sync_egui_ime_allowed(false);
+        self.winit_window.set_ime_cursor_area(cursor_origin, cursor_size);
     }
 
     pub(crate) fn for_each_active_dialog(
@@ -716,42 +735,74 @@ impl HeadedWindow {
                     });
                 },
                 WindowEvent::Ime(ime) => match ime {
+                    // brow (Phase 4.3): all four winit IME events go through
+                    // the session tracker (`super::ime`) — the mapping table
+                    // is unit-tested there. Summary:
+                    // - Enabled/Preedit/Commit forward their Composition
+                    //   events to the engine;
+                    // - Disabled only blurs the focused editable on a genuine
+                    //   dismissal; the Windows session-end signal that follows
+                    //   every successful commit is swallowed, otherwise
+                    //   typing died after each commit.
                     Ime::Enabled => {
-                        webview.notify_input_event(InputEvent::Ime(ImeEvent::Composition(
-                            servo::CompositionEvent {
-                                state: servo::CompositionState::Start,
-                                data: String::new(),
-                            },
-                        )));
+                        if let ImeAction::Composition(composition) =
+                            self.ime_session.borrow_mut().on_enabled()
+                        {
+                            webview.notify_input_event(InputEvent::Ime(ImeEvent::Composition(
+                                composition,
+                            )));
+                        }
                     },
                     Ime::Preedit(text, _) => {
-                        webview.notify_input_event(InputEvent::Ime(ImeEvent::Composition(
-                            servo::CompositionEvent {
-                                state: servo::CompositionState::Update,
-                                data: text,
-                            },
-                        )));
+                        // Keep the IME candidate window anchored to the
+                        // focused field across redraws and egui passes.
+                        if let Some((origin, size)) = self.last_ime_cursor_area.get() {
+                            self.winit_window.set_ime_cursor_area(origin, size);
+                        }
+                        if let ImeAction::Composition(composition) =
+                            self.ime_session.borrow_mut().on_preedit(text)
+                        {
+                            webview.notify_input_event(InputEvent::Ime(ImeEvent::Composition(
+                                composition,
+                            )));
+                        }
                     },
                     Ime::Commit(text) => {
-                        webview.notify_input_event(InputEvent::Ime(ImeEvent::Composition(
-                            servo::CompositionEvent {
-                                state: servo::CompositionState::End,
-                                data: text,
-                            },
-                        )));
+                        if let ImeAction::Composition(composition) =
+                            self.ime_session.borrow_mut().on_commit(text)
+                        {
+                            webview.notify_input_event(InputEvent::Ime(ImeEvent::Composition(
+                                composition,
+                            )));
+                        }
                     },
                     Ime::Disabled => {
-                        // There are two reasons we receive this message from winit:
+                        // There are three reasons we receive this message from winit:
                         //
-                        // 1. The user dismissed the IME. In that case we want to inform Servo
-                        //    so it can unfocus the current editable element.
-                        // 2. Servo changed focus and requested that we dismiss the IME, which
-                        //    in turn triggers this message. We know this is the case when we don't
-                        //    expect any IME to be open and shouldn't send any more messages to
-                        //    Servo as it might cause unexpected blurring of the newly focused
-                        //    element.
-                        if self.visible_input_method.take().is_some() {
-                            webview.notify_input_event(InputEvent::Ime(ImeEvent::Dismissed));
+                        // 1. Windows ended a composition session after a successful
+                        //    commit. This happens after EVERY commit — blurring here
+                        //    made CJK/Arabic input die after each commit on owner
+                        //    hardware.
+                        // 2. The user canceled the composition or dismissed the IME.
+                        //    We want to inform Servo so it can unfocus the current
+                        //    editable element.
+                        // 3. Servo changed focus and requested that we dismiss the IME,
+                        //    which in turn triggers this message. The hide path clears
+                        //    `visible_input_method` before this arrives; we know this
+                        //    is the case when the page does not own the IME and
+                        //    shouldn't send any more messages to Servo as it might
+                        //    cause unexpected blurring of the newly focused element.
+                        let page_owns_ime = self.visible_input_method.get().is_some();
+                        let action = self.ime_session.borrow_mut().on_disabled(page_owns_ime);
+                        match action {
+                            ImeAction::Dismissed => {
+                                self.visible_input_method.set(None);
+                                webview.notify_input_event(InputEvent::Ime(ImeEvent::Dismissed));
+                            },
+                            ImeAction::SessionEnd | ImeAction::Ignore => {},
+                            ImeAction::Composition(_) => {
+                                unreachable!("on_disabled never returns a composition action")
+                            },
                         }
                     },
                 },

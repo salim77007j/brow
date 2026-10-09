@@ -347,6 +347,16 @@ impl Gui {
         self.toolbar_height
     }
 
+    /// brow (Phase 4.3): keep egui-winit's IME-allowance debouncer in sync
+    /// when servoshell calls `set_ime_allowed` outside egui-winit (the page
+    /// requested an IME via `show_ime`). Recording `false` makes the
+    /// debouncer believe IME-off is already in effect, so its per-pass
+    /// `set_ime_allowed(false)` for an unfocused URL bar can never cancel
+    /// the page's IME session (egui-winit 0.34.3 `lib.rs:1105-1115`).
+    pub(crate) fn sync_egui_ime_allowed(&self, allowed: bool) {
+        self.context.egui_winit.set_allow_ime(allowed);
+    }
+
     /// Return true iff the given position is over the egui toolbar.
     pub(crate) fn is_in_egui_toolbar_rect(
         &self,
