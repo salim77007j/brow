@@ -24,6 +24,7 @@ out/
 .env.*
 *.pem
 *.key
+!servo/resources/privatekey_for_testing.key
 ghp_*
 
 # ==== Editors / IDE ====

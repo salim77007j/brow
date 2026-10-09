@@ -4,7 +4,6 @@
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -267,8 +266,7 @@ impl DiskCache {
             // its (partial) bytes were moved into a `Done` state to close out
             // the in-memory accumulator.
             .filter(|cached_resource| {
-                cached_resource.is_done() &&
-                    !cached_resource.aborted.load(Ordering::Relaxed)
+                cached_resource.is_done() && !cached_resource.is_aborted()
             })
             .collect();
         let Ok(data) = postcard::to_stdvec(&*data_to_serialize) else {

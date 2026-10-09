@@ -2197,10 +2197,15 @@ fn test_truncated_response_body_is_a_network_error() {
     );
     let error = response.get_network_error().expect("network error detail");
     match error {
-        // hyper detects the Content-Length framing violation client-side and
-        // surfaces it through the mid-body error path (ResourceLoadError); a
-        // hard connection abort (server resets) surfaces as ConnectionFailure.
-        NetworkError::ResourceLoadError(_) | NetworkError::ConnectionFailure => {},
+        // The load-bearing property is that the resource FAILS; the exact
+        // variant depends on where the server aborts: hyper's server panics
+        // the connection on a Content-Length mismatch before any body byte
+        // is sent (client sees HttpError/ConnectionFailure), while a framing
+        // violation mid-body surfaces as ResourceLoadError from the
+        // body-collection error path.
+        NetworkError::ResourceLoadError(_) |
+        NetworkError::ConnectionFailure |
+        NetworkError::HttpError(_) => {},
         other => panic!("expected a mid-body resource error, got: {:?}", other),
     }
 

@@ -245,16 +245,18 @@ impl H3Client {
                         // what Content-Length promised before calling it a
                         // clean EOF. A mismatch yields a body error, which
                         // http_loader turns into a failed resource.
-                        if let Some(expected) = expected_content_length &&
-                            received_bytes != expected
-                        {
-                            let _ = tx
-                                .send(Err(BrowNetError::H3Request(format!(
-                                    "truncated body: Content-Length {expected}, \
-                                     received {received_bytes}"
-                                ))))
-                                .await;
-                            return;
+                        if let Some(expected) = expected_content_length {
+                            // NOTE: brow-net-core builds with edition 2021 —
+                            // no let-chains here, unlike the servo crates.
+                            if received_bytes != expected {
+                                let _ = tx
+                                    .send(Err(BrowNetError::H3Request(format!(
+                                        "truncated body: Content-Length {expected}, \
+                                         received {received_bytes}"
+                                    ))))
+                                    .await;
+                                return;
+                            }
                         }
                         break; // clean EOF
                     },

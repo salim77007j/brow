@@ -166,6 +166,12 @@ impl CachedResource {
     pub(crate) fn is_done(&self) -> bool {
         self.body.lock().is_done()
     }
+
+    /// brow (R-16): true when this body failed mid-transfer (or the fetch was
+    /// cancelled) — such entries must never be served or flushed to disk.
+    pub(crate) fn is_aborted(&self) -> bool {
+        self.aborted.load(Ordering::Relaxed)
+    }
 }
 
 #[derive(Debug, Deserialize, MallocSizeOf, Serialize)]
