@@ -793,3 +793,16 @@ e906d81f0 + docs pushes):** fast gates, servoshell compile (D-003 — CI-only),
 Windows build, i18n/2x-DPI captures; results to be recorded when read from
 the GitHub Actions API; owner IME matrix is the R-05 closer and cannot be
 run in CI by design (V2_PLAN §8.2).
+
+**CI status at close (run 37868604198, head dbede25f1, read from the
+Actions API 2026-10-09).** Fast gates 5/5 GREEN: brow-net-core,
+brow-shell-core (+ the three new font tests, 60/60 crate total),
+brow-privacy, clippy+fmt, and **Check brow-shell — the servoshell/brow-shell
+compile that verifies 3.3's gui.rs changes (D-003 CI-compile gate)**.
+IN-PROGRESS at close: Linux engine build + smoke + the 3.4 i18n/2x-DPI
+captures, and the Windows build gate (D-005). Per PROCESS.md §6 the phase
+is NOT declared done until those are read green next session; the i18n
+screenshots will be committed into docs/evidence/phase3-i18n/ from the
+artifact, and R-05 closes only via the owner's docs/OWNER_TESTS_PHASE3.md
+run. Next session re-entry: clone, checkout v0.7-rebuild, read run
+37868604198 (or its per-ref successor) first.
