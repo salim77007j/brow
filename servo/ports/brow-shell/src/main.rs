@@ -20,6 +20,13 @@ use std::path::PathBuf;
 use servo::Preferences;
 
 fn main() {
+    // 0. Bundled fonts (Phase 3, D-013): copy the payload `fonts/` next to
+    //    the binary into the per-user font dir BEFORE any font stack
+    //    (fontconfig/DirectWrite/egui) initializes, so the engine's
+    //    script-aware fallback tables resolve CJK/Arabic/Hebrew everywhere.
+    let installed_fonts = brow_shell_core::fonts::install_bundled_fonts();
+    log::info!("brow: bundled fonts installed this run: {}", installed_fonts);
+
     // 1. Profile dir + settings (same resolution as the v0.6.1 shell).
     let data_dir = brow_data_dir();
     let _ = std::fs::create_dir_all(&data_dir);

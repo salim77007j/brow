@@ -9,6 +9,7 @@
 
 pub mod bookmarks;
 pub mod downloads;
+pub mod fonts;
 pub mod history;
 pub mod i18n;
 pub mod lifecycle;
