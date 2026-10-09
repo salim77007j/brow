@@ -1,9 +1,12 @@
 # Phase 4 Plan — Owner-Hardware Failure-Class Fixes (scroll crash, IME, YouTube JS, performance)
 
-Status: **PLAN — awaiting owner approval before implementation** (per owner
-directive "Report your plan before implementing").
-Date: 2026-10-09. Baseline: `v0.7-rebuild` @ `a7c59a49e` (artifact the owner
-tested: run 37939128861, `brow-servo-windows-x86_64` 170.2 MB).
+Status: **EXECUTED** (owner approved with "approve"); see
+`docs/PHASE4_REPORT.md` for per-item outcomes and evidence.
+Commits: 4.1 `0324d9f6f` · 4.2 `748d9fa83` · 4.3 `c7f2ae367` · 4.4
+`4c73c2f9b` (+ fixes `55d42dfe6`) · 4.5 `b32f3e01c` · 4.6 `1031fc566`.
+Original baseline: `v0.7-rebuild` @ `a7c59a49e` (artifact the owner tested:
+run 37939128861, `brow-servo-windows-x86_64` 170.2 MB).
+Date: 2026-10-09.
 
 ---
 

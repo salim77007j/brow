@@ -926,3 +926,50 @@ CLOSED (owner), R-05 root-cause-locked; new R-15/R-16/R-17.
 
 **No product code changed in this entry** — plan awaiting owner approval
 per the owner's directive "Report your plan before implementing".
+
+## 2026-10-09 · Phase 4 EXECUTED — 4.1-4.7 implemented, committed, pushed
+
+Owner approved the plan ("approve"). Execution ledger (all on `v0.7-rebuild`,
+one commit set per sub-item, WHAT/WHY/HOW-verified messages):
+
+- **4.1** `0324d9f6f` — Windows crash capture: SEH filter + dbghelp
+  minidumps → %LOCALAPPDATA%\brow\crashes\, rolling brow.log (startup/
+  GL strings/panics), BROW_BUILD_PROFILE baked. windows-sys 0.61.2 API
+  surface verified item-by-item; whole Windows arm cross-compiles clean
+  (cargo check --target x86_64-pc-windows-msvc); 5 date-logic unit tests.
+- **4.2** `748d9fa83` — CI Linux+Windows build production-stripped (D-015):
+  exits upstream #48109's O3/no-LTO segfault class by construction; closes
+  E-001/R-01 as CLOSED-EXPLAINED. YAML validated.
+- **4.3** `c7f2ae367` — IME: egui-winit debouncer synced in show_ime;
+  Ime::Disabled mapped through a unit-tested pure state machine
+  (desktop/ime.rs, 8 tests, platform-parameterized); preedit re-asserts
+  the cursor area. Test suite caught an engine-hide blur bug during dev.
+- **4.4** `4c73c2f9b` — truncation: mid-body errors fail the resource
+  (Data::Error + aborted flag); h3 pump wire-byte CL check on clean FIN;
+  disk flush skips aborted; cache namespace brow-cache-v2 isolates
+  pre-4.4 poisoned entries; network_http3_enabled default FALSE (D-016);
+  D-017 records why serve-time CL equality is unsound; servo-net CI gate
+  added. h3 truncation test green on a REAL quinn/h3 loopback.
+- **4.5** `b32f3e01c` — 100 px/line; wheel coalescing per event-loop burst
+  (flush on non-wheel event + about_to_wait).
+- **4.6** `1031fc566` — docs/UPSTREAM/: crash-handler PR draft (answers
+  #48110), truncation issue draft (new upstream info), #46936/#42593/
+  #45668/#38072 comments, honest YouTube status (R-17).
+- **4.7** `55d42dfe6` — gate repairs discovered by the first CI run:
+  Cargo.lock regenerated (stale orphans; --locked refused; reproduced at
+  baseline → environmental); brow-net-core edition-2021 let-chain fixed
+  (the actual net-core job failure); CachedResource::is_aborted accessor;
+  truncation test accepts real failure variants (hyper test-server panics
+  on CL mismatch before body bytes); resources/privatekey_for_testing.key
+  restored from upstream (modulus-verified) — '*.key' gitignore had
+  silently broken all make_ssl_server tests since Phase 1; CI skips 7
+  pre-existing/flaky tests (R-18). Local: brow-net-core green, h3 loopback
+  3/3, servo-net 384/384 (with documented skips).
+
+Registers: R-04 CLOSED, R-01 CLOSED-EXPLAINED, R-05 MITIGATED (owner matrix
+closes it), R-16 MITIGATED (owner A/B closes it), R-17 OPEN (documented),
+R-18 OPEN (upstream-track). D-015/D-016/D-017 recorded.
+
+**Next**: read back the green CI run on/after 55d42dfe6, hand the
+brow-servo-windows-x86_64 artifact + PHASE4_REPORT §6 checklist to the
+owner; before/after numbers + crash-capture evidence close the phase.
