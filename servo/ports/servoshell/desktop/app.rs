@@ -223,6 +223,26 @@ impl ApplicationHandler<AppEvent> for App {
         event_loop.set_control_flow(ControlFlow::Wait);
     }
 
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // brow (4.5): deliver wheel ticks coalesced over one event-loop burst
+        // before the loop blocks, so a burst of N fast wheel ticks costs one
+        // script round trip and one compositor scroll instead of N. The
+        // flush is skipped when nothing was coalesced so the loop keeps its
+        // Wait-based sleeping behavior.
+        let AppState::Running(state) = &self.state else {
+            return;
+        };
+        let mut flushed_any = false;
+        for window in state.windows().values() {
+            if let Some(headed_window) = window.platform_window().as_headed_window() {
+                flushed_any |= headed_window.flush_pending_wheel(&window);
+            }
+        }
+        if flushed_any && !self.pump_servo_event_loop(event_loop.into()) {
+            event_loop.exit();
+        }
+    }
+
     fn user_event(&mut self, event_loop: &ActiveEventLoop, app_event: AppEvent) {
         let AppState::Running(state) = &self.state else {
             return;

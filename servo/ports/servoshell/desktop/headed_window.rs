@@ -110,6 +110,11 @@ pub struct HeadedWindow {
     /// `set_ime_cursor_area`, re-asserted on every `Ime::Preedit` so the
     /// candidate window stays anchored to the focused field.
     last_ime_cursor_area: Cell<Option<(LogicalPosition<i32>, LogicalSize<i32>)>>,
+    /// brow (4.5): wheel deltas coalesced within one event-loop burst. Each
+    /// pending tick otherwise costs a script-thread round trip (hit-test +
+    /// DOM dispatch) before the compositor scrolls — the owner's fast-scroll
+    /// lag. Flushed on the next non-wheel event or in `about_to_wait`.
+    pending_wheel_event: RefCell<Option<(WheelDelta, Point2D<f32, DeviceIndependentPixel>)>>,
     /// The position of the mouse cursor after the most recent `MouseMove` event.
     last_mouse_position: Cell<Option<Point2D<f32, DeviceIndependentPixel>>>,
 }
@@ -228,6 +233,7 @@ impl HeadedWindow {
             visible_input_method: Default::default(),
             ime_session: Default::default(),
             last_ime_cursor_area: Default::default(),
+            pending_wheel_event: Default::default(),
             last_mouse_position: Default::default(),
         })
     }
@@ -540,12 +546,34 @@ impl HeadedWindow {
         self.gui.borrow().toolbar_height()
     }
 
+    /// brow (4.5): flush wheel ticks coalesced within one event-loop burst.
+    /// Returns true when a wheel event was delivered to the engine.
+    pub(crate) fn flush_pending_wheel(&self, window: &ServoShellWindow) -> bool {
+        let Some((delta, point)) = self.pending_wheel_event.borrow_mut().take() else {
+            return false;
+        };
+        let Some(webview) = window.active_webview() else {
+            return false;
+        };
+        webview.notify_input_event(InputEvent::Wheel(WheelEvent::new(
+            delta,
+            point.into(),
+        )));
+        true
+    }
+
     pub(crate) fn handle_winit_window_event(
         &self,
         state: Rc<RunningAppState>,
         window: Rc<ServoShellWindow>,
         event: WindowEvent,
     ) {
+        // brow (4.5): a non-wheel event ends the current wheel burst —
+        // deliver the coalesced wheel event first to keep DOM event order.
+        if !matches!(event, WindowEvent::MouseWheel { .. }) {
+            self.flush_pending_wheel(&window);
+        }
+
         // Handle resize events first, so that any subsequent redrawing draws onto a buffer of the
         // correct size.
         let mut resized = false;
@@ -698,18 +726,32 @@ impl HeadedWindow {
                         },
                     };
 
-                    // Create wheel event before snapping to the major axis of movement
-                    let delta = WheelDelta {
+                    // brow (4.5): coalesce instead of notifying per tick. A
+                    // burst of N wheel ticks (one fast scroll gesture) becomes
+                    // ONE wheel event: one script hit-test + one compositor
+                    // scroll instead of N. The coalesced event uses the first
+                    // tick's cursor point — fast scrolling keeps the cursor
+                    // effectively stationary.
+                    let pending_delta = WheelDelta {
                         x: delta_x,
                         y: delta_y,
                         z: 0.0,
                         mode,
                     };
-                    let point = self.webview_relative_mouse_point.get();
-                    webview.notify_input_event(InputEvent::Wheel(WheelEvent::new(
-                        delta,
-                        point.into(),
-                    )));
+                    let mut pending = self.pending_wheel_event.borrow_mut();
+                    match pending.as_mut() {
+                        Some((accumulated, _)) => {
+                            accumulated.x += pending_delta.x;
+                            accumulated.y += pending_delta.y;
+                            accumulated.z += pending_delta.z;
+                        },
+                        None => {
+                            *pending = Some((
+                                pending_delta,
+                                self.webview_relative_mouse_point.get(),
+                            ));
+                        },
+                    }
                 },
                 WindowEvent::Touch(touch) => {
                     webview.notify_input_event(InputEvent::Touch(TouchEvent::new(
