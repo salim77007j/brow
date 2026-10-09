@@ -234,6 +234,11 @@ jobs:
         # servo's cookie jar behavior and predate Phase 4) plus one flaky
         # filemanager test (passes in isolation; fails only under full-suite
         # parallel load). Tracked as R-18 — remove the skips when fixed.
+        # working-directory: the run block uses `>-` (folded) with a `||`
+        # fallback and no `cd servo` — without this, cargo resolves the repo
+        # root (no Cargo.toml) and the step fails after a green build
+        # (run #78, 2026-10-09).
+        working-directory: servo
         run: >-
           cargo test -p servo-net --locked --
           --skip http_loader::test_cookie_set_with_httponly_should_not_be_available_using_getcookiesforurl

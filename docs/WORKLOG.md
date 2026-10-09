@@ -973,3 +973,23 @@ R-18 OPEN (upstream-track). D-015/D-016/D-017 recorded.
 **Next**: read back the green CI run on/after 55d42dfe6, hand the
 brow-servo-windows-x86_64 artifact + PHASE4_REPORT §6 checklist to the
 owner; before/after numbers + crash-capture evidence close the phase.
+
+**4.8** `4a8f6d85a` + `e2c58de13` — CI run #76 diagnosis (first run to
+reach servoshell compilation; #69-#75 cancelled by newer pushes):
+6 rustc errors in servoshell (lib) — ImeSessionTracker Default,
+pending_wheel_event point unit (DevicePoint, not
+DeviceIndependentPixel — WebViewPoint has From<DevicePoint> only),
+sync_egui_ime_allowed &mut + try_borrow_mut caller fallback, glow
+get_parameter_string. Run #78 then exposed the true root cause of the
+glow E0599s: missing `use glow::HasContext` (glow 0.17 trait methods).
+Linux job reached `Finished production-stripped in 18m 11s` — full
+compile green on Linux; its only failure was the 4.7 servo-net test
+step missing `working-directory: servo` (cargo resolved the repo root).
+**Run #78 Windows job: GREEN — `brow-servo-windows-x86_64` artifact
+(147.4 MB) built, smoke-tested, staged, zipped, uploaded** (job
+114014509006, all 16 steps success, 79 min). ci.yml working-directory
+fix queued with this entry; run #79 expected fully green.
+
+Registers: R-18 unchanged (skips remain); new note — crash_handler
+Linux dead-code warnings (3 fns only called on Windows paths) tracked
+for a follow-up cfg tidy, non-blocking.
