@@ -1,7 +1,11 @@
-Noto Sans and Noto Sans Arabic are licensed under the SIL Open Font License,
-Version 1.1. Copyright 2022 The Noto Project Authors (github.com/notofonts).
+Noto Sans, Noto Sans Arabic, Noto Sans SC and Noto Sans Hebrew are licensed
+under the SIL Open Font License, Version 1.1. Copyright 2022-2024 The Noto
+Project Authors (github.com/notofonts).
 
-The fonts are copied as hinted TTF from the notofonts.github.io releases.
+Noto Sans / Noto Sans Arabic / Noto Sans Hebrew are copied as hinted TTF from
+the notofonts.github.io releases. Noto Sans SC (Version 2.004) is copied from
+the noto-cjk repository (github.com/notofonts/noto-cjk,
+Sans/SubsetOTF/SC/NotoSansSC-Regular.otf).
 
 SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
 
