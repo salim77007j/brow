@@ -4,6 +4,7 @@
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -261,7 +262,14 @@ impl DiskCache {
         let entry = entry.read().await;
         let data_to_serialize: Vec<&CachedResource> = entry
             .iter()
-            .filter(|cached_resource| cached_resource.is_done())
+            // brow (R-16): a body that failed mid-transfer is marked aborted
+            // (http_loader); it must never reach the disk cache even though
+            // its (partial) bytes were moved into a `Done` state to close out
+            // the in-memory accumulator.
+            .filter(|cached_resource| {
+                cached_resource.is_done() &&
+                    !cached_resource.aborted.load(Ordering::Relaxed)
+            })
             .collect();
         let Ok(data) = postcard::to_stdvec(&*data_to_serialize) else {
             error!("Could not deserialize value");

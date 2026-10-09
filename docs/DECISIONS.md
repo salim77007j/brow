@@ -406,3 +406,48 @@ experiment is deliberately NOT adopted now — it is a new untested
 configuration (recorded as optional E-002 for owner A/B later); v0.7
 optimizes for the proven-stable codegen. Raw `--release` builds stay
 available locally for experiments but are no longer shipped or gated.
+
+## D-016 — HTTP/3 ships but stays opt-in for v0.7 (`network_http3_enabled=false`)
+
+**Date:** 2026-10-09
+
+**Context.** brow's custom h3 path (support/brow-net-core) defaults ON and
+YouTube advertises Alt-Svc: h3. Research (PHASE4_PLAN §1.3) showed the h3
+pump amplifies truncation: per-chunk 30 s timeouts, pooled-connection
+eviction that can close QUIC connections under in-flight streams, and —
+before 4.4 — early FIN treated as clean EOF with no Content-Length check
+anywhere. The owner's reproducible YouTube parse errors came through this
+path.
+
+**Decision.** For v0.7, `network_http3_enabled` defaults to **false**
+(prefs.rs). The h3 path ships and stays testable (loopback harness), and
+4.4's truncation fixes make its failure modes loud (body error → failed
+resource) instead of silent, but h3 is opt-in until it survives owner A/B
+validation (h3 on vs off on real hardware).
+
+**Consequences.** First-load paths use HTTP/1.1→h2 (Alt-Svc upgrade is not
+advertised by default), removing a whole failure class from owner
+validation. Re-enable by default only after a clean owner A/B.
+
+## D-017 — Content-Length verification lives at the WIRE layer, not at cache serve
+
+**Date:** 2026-10-09
+
+**Context.** 4.4(b) planned CL verification "at body completion and at
+cache serve". The stored body is POST-DECOMPRESSION (http_loader wraps the
+stream in `Decoder`), while Content-Length is the WIRE (compressed) length —
+a serve-time equality check would reject every compressed response. The
+sound verification points are: hyper's CL/chunked framing enforcement
+(client-side, surfaces as a mid-body error — previously swallowed into
+`Data::Done(partial)`, now `Data::Error`), and brow's h3 pump where data
+frames are counted pre-decompression (4.4 adds an exact CL cross-check on
+clean FIN).
+
+**Decision.** No decompressed-vs-wire length check anywhere. Cache-side
+hygiene instead uses: (1) `aborted` flag set on every mid-body failure —
+rejected by serve (existing), revalidate candidate selection (existing), and
+disk flush (4.4); (2) the cache-format namespace (`brow-cache-v2`), which
+makes pre-4.4 disk entries — including already-poisoned ones on owner
+hardware — unreachable without a migration (they age out under the size
+cap). Owner diagnostic for poisoned installs: fresh profile or first 4.4
+run naturally bypasses old entries.

@@ -225,3 +225,29 @@ async fn test_stale_while_revalidate_not_used_when_request_demands_revalidation(
         "a no-cache request must trigger synchronous validation, not background revalidation"
     );
 }
+
+// brow (R-16): the cache-format namespace must isolate pre-4.4 disk entries
+// (some of which hold valid-looking truncated bodies from the old bug) —
+// keys for the same URL within one namespace are stable, the namespace is
+// part of the stored/looked-up string, and the URL stays recoverable.
+#[tokio::test]
+async fn cache_key_namespace_is_stable_and_namespaced() {
+    let url = ServoUrl::parse("https://www.example.com/script.js").unwrap();
+    let request = RequestBuilder::new(
+        None,
+        UrlWithBlobClaim::new(url.clone(), None),
+        Referrer::NoReferrer,
+    )
+    .pipeline_id(Some(TEST_PIPELINE_ID))
+    .origin(url.origin())
+    .build();
+    let key = CacheKey::new(&request);
+    let key_from_url = CacheKey::from_url(url);
+
+    // Same-URL keys are identical within one format generation.
+    assert_eq!(key.as_ref(), key_from_url.as_ref());
+    // The namespace prefix is part of the stored/looked-up string.
+    assert!(key.as_ref().starts_with("brow-cache-v2"));
+    // ... and the URL itself is still recoverable for descriptors/debugging.
+    assert!(key.as_ref().contains("https://www.example.com/script.js"));
+}

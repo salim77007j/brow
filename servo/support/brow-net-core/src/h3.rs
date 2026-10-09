@@ -214,19 +214,50 @@ impl H3Client {
 
         let (parts, _) = response.into_parts();
 
+        // brow (R-16): the pump counts WIRE bytes (h3 data frames are
+        // pre-decompression), so a Content-Length cross-check here is exact.
+        // A clean FIN that delivered a different byte count is truncation,
+        // not EOF — quinn treats an early stream finish as a normal end, and
+        // treating it as clean EOF is what let partial scripts reach the
+        // parser on owner hardware.
+        let expected_content_length: Option<u64> = parts
+            .headers
+            .get(http::header::CONTENT_LENGTH)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse().ok());
+
         let (tx, rx) = mpsc::channel::<Result<Bytes, BrowNetError>>(4);
         let body_timeout = self.config.body_timeout;
         tokio::spawn(async move {
+            let mut received_bytes: u64 = 0;
             loop {
                 match tokio::time::timeout(body_timeout, stream.recv_data()).await {
                     Ok(Ok(Some(chunk))) => {
                         let mut chunk = chunk;
                         let bytes = chunk.copy_to_bytes(chunk.remaining());
+                        received_bytes += bytes.len() as u64;
                         if tx.send(Ok(bytes)).await.is_err() {
                             return; // receiver dropped: body no longer needed
                         }
                     },
-                    Ok(Ok(None)) => break, // clean EOF
+                    Ok(Ok(None)) => {
+                        // brow (R-16): verify the stream delivered exactly
+                        // what Content-Length promised before calling it a
+                        // clean EOF. A mismatch yields a body error, which
+                        // http_loader turns into a failed resource.
+                        if let Some(expected) = expected_content_length &&
+                            received_bytes != expected
+                        {
+                            let _ = tx
+                                .send(Err(BrowNetError::H3Request(format!(
+                                    "truncated body: Content-Length {expected}, \
+                                     received {received_bytes}"
+                                ))))
+                                .await;
+                            return;
+                        }
+                        break; // clean EOF
+                    },
                     Ok(Err(e)) => {
                         let _ = tx
                             .send(Err(BrowNetError::H3Request(format!("body error: {e}"))))

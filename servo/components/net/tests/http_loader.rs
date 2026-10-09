@@ -2162,3 +2162,47 @@ fn test_stale_while_revalidate_serves_cached_and_revalidates_in_background() {
 
     let _ = server.close();
 }
+
+// brow (R-16): a response whose body dies mid-transfer must surface as a
+// network error. Before Phase 4.4 the partial body was delivered as a
+// completed `Data::Done` response — the script parser compiled the truncated
+// source ("expected expression, got end of script") and the http-cache stored
+// it for every later load (the owner's YouTube failure mode).
+#[test]
+fn test_truncated_response_body_is_a_network_error() {
+    let handler =
+        move |_: HyperRequest<Incoming>,
+              response: &mut HyperResponse<BoxBody<Bytes, hyper::Error>>| {
+            response
+                .headers_mut()
+                .insert(header::CONTENT_LENGTH, HeaderValue::from_static("100"));
+            *response.body_mut() = make_body(b"partial".to_vec());
+        };
+    let (server, url) = make_server(handler);
+
+    let request = RequestBuilder::new(Some(TEST_WEBVIEW_ID), url.clone(), Referrer::NoReferrer)
+        .method(Method::GET)
+        .body(None)
+        .destination(Destination::Document)
+        .origin(mock_origin())
+        .pipeline_id(Some(TEST_PIPELINE_ID))
+        .policy_container(Default::default())
+        .build();
+
+    let response = fetch(request, None);
+    assert!(
+        response.is_network_error(),
+        "a truncated body must be a network error, got: {:?}",
+        response.actual_response().status
+    );
+    let error = response.get_network_error().expect("network error detail");
+    match error {
+        // hyper detects the Content-Length framing violation client-side and
+        // surfaces it through the mid-body error path (ResourceLoadError); a
+        // hard connection abort (server resets) surfaces as ConnectionFailure.
+        NetworkError::ResourceLoadError(_) | NetworkError::ConnectionFailure => {},
+        other => panic!("expected a mid-body resource error, got: {:?}", other),
+    }
+
+    let _ = server.close();
+}

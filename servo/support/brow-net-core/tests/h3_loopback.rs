@@ -149,6 +149,24 @@ async fn spawn_h3_server() -> (std::net::SocketAddr, tokio::task::JoinHandle<()>
                             return;
                         }
 
+                        if path == "/truncated" {
+                            // brow (R-16): promise 100 bytes but deliver 40,
+                            // then finish the stream cleanly — quinn surfaces
+                            // an early finish as a normal end, so the CLIENT
+                            // must detect the Content-Length mismatch.
+                            let response = http::Response::builder()
+                                .status(200)
+                                .header("content-length", "100")
+                                .body(())
+                                .unwrap();
+                            if stream.send_response(response).await.is_ok() {
+                                let _ =
+                                    stream.send_data(Bytes::from_static(&[b'x'; 40])).await;
+                                let _ = stream.finish().await;
+                            }
+                            return;
+                        }
+
                         let mut response = http::Response::builder()
                             .status(200)
                             .header("content-type", "text/plain");
@@ -259,4 +277,28 @@ async fn h3_header_echo_and_streamed_body() {
         .to_bytes();
     assert_eq!(body.len(), 256 * 1024);
     assert!(body.iter().all(|&b| b == b'b'));
+}
+
+// brow (R-16): a clean FIN that delivered fewer bytes than Content-Length
+// promised is truncation, not EOF — the body must error (which http_loader
+// turns into a failed resource) instead of completing a partial body.
+#[tokio::test(flavor = "multi_thread")]
+async fn h3_truncated_body_is_an_error_not_a_partial_body() {
+    let (addr, _server) = spawn_h3_server().await;
+    let client = h3_client(addr).await;
+
+    let uri: http::Uri = format!("https://localhost:{}/truncated", addr.port())
+        .parse()
+        .unwrap();
+    let response = client
+        .request("localhost", addr.port(), http::Method::GET, uri, http::HeaderMap::new())
+        .await
+        .expect("truncated h3 request (head arrives fine)");
+    assert_eq!(response.status(), 200);
+
+    let collected = http_body_util::BodyExt::collect(response.into_body()).await;
+    assert!(
+        collected.is_err(),
+        "a body short of its Content-Length must not complete cleanly"
+    );
 }

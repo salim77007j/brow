@@ -39,6 +39,12 @@ jobs:
       - name: Unit + integration tests (loopback H3/QUIC and DoH/TLS servers)
         run: cargo test -p brow-net-core --locked || cargo test -p brow-net-core
 
+      - name: Engine net crate tests (truncation + cache hygiene, R-16)
+        # brow (4.4): the engine's net crate now carries the truncation and
+        # cache-namespace tests; it builds without the full engine (no
+        # mozjs/layout) so it stays a fast gate.
+        run: cargo test -p servo-net --locked || cargo test -p servo-net
+
       - name: Build the benchmark harness
         run: cargo build -p brow-bench
 

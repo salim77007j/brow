@@ -2481,12 +2481,21 @@ async fn http_network_fetch(
         let _ = done_sender.send(Data::ContentLength(possible_length));
     }
 
+    // brow (R-16): shared with the http-cache. Flipping this when a body
+    // fails mid-transfer makes every cache path (serve, revalidate candidate
+    // selection, disk flush) reject the entry, so a truncated body can never
+    // be stored or served.
+    let aborted_flag_in_fold = response.aborted.clone();
+    let aborted_flag3 = response.aborted.clone();
+
     spawn_task(
         response_stream
             .into_body()
             .try_fold(response_body, move |response_body_accumulator, chunk| {
                 if cancellation_listener.cancelled() {
                     *response_body_accumulator.lock() = ResponseBody::Done(vec![]);
+                    // brow (R-16): a cancelled body is not a valid cache entry.
+                    aborted_flag_in_fold.store(true, Ordering::Release);
                     let _ = done_sender.send(Data::Cancelled);
                     return future::ready(Err(std::io::Error::new(
                         std::io::ErrorKind::Interrupted,
@@ -2528,20 +2537,33 @@ async fn http_network_fetch(
             .map_err(move |error| {
                 if let std::io::ErrorKind::InvalidData = error.kind() {
                     debug!("Content decompression error for {:?}", url2);
+                    // brow (R-16): decompression failures are also invalid
+                    // bodies — the partial bytes must not be cached or
+                    // served to a later load of the same URL.
+                    aborted_flag3.store(true, Ordering::Release);
                     let _ = done_sender3.send(Data::Error(NetworkError::DecompressionError));
                     let mut body = response_body2.lock();
-
+                    *body = ResponseBody::Done(vec![]);
+                } else {
+                    // brow (R-16): any other mid-body error used to fall
+                    // through to `Data::Done` with the partial body — the
+                    // script parser then compiled a truncated source
+                    // ("expected expression, got end of script") and the
+                    // cache stored it for every later load. Fail the
+                    // resource instead; hyper has already detected the
+                    // framing violation (Content-Length / chunked / h3),
+                    // so this is the truncation path.
+                    debug!("mid-body error for {:?}: {}", url2, error);
+                    aborted_flag3.store(true, Ordering::Release);
+                    let _ = done_sender3.send(Data::Error(
+                        NetworkError::ResourceLoadError(format!(
+                            "response body failed mid-transfer: {error}"
+                        )),
+                    ));
+                    let mut body = response_body2.lock();
                     *body = ResponseBody::Done(vec![]);
                 }
-                debug!("finished response for {:?}", url2);
-                let mut body = response_body2.lock();
-                let completed_body = match *body {
-                    ResponseBody::Receiving(ref mut body) => std::mem::take(body),
-                    _ => vec![],
-                };
-                *body = ResponseBody::Done(completed_body);
                 timing_ptr3.set_attribute(ResourceAttribute::ResponseEnd);
-                let _ = done_sender3.send(Data::Done);
             }),
     );
 

@@ -106,25 +106,35 @@ impl std::ops::Div<u64> for ApproxDuration {
 #[derive(Clone, Debug, Eq, Hash, MallocSizeOf, PartialEq)]
 pub struct CacheKey {
     url: ServoUrl,
+    /// brow (R-16): cache-format namespace prepended to the URL string used
+    /// for disk storage. Bodies that failed mid-transfer in builds before
+    /// Phase 4.4 were stored as valid-looking `Done(partial)` entries;
+    /// bumping the namespace makes every pre-4.4 disk entry unreachable
+    /// (they age out under the size cap) without a migration step.
+    namespaced: String,
 }
+
+/// brow (R-16): bump when the on-disk cache entry semantics change.
+const CACHE_FORMAT_NAMESPACE: &str = "brow-cache-v2\u{1}";
 
 impl AsRef<str> for CacheKey {
     fn as_ref(&self) -> &str {
-        self.url.as_str()
+        &self.namespaced
     }
 }
 
 impl CacheKey {
     /// Create a cache-key from a request.
     pub fn new(request: &Request) -> CacheKey {
-        CacheKey {
-            url: request.current_url(),
-        }
+        Self::from_url(request.current_url())
     }
 
     /// Create a cache-key from a resolved URL.
     pub fn from_url(url: ServoUrl) -> CacheKey {
-        CacheKey { url }
+        CacheKey {
+            namespaced: format!("{}{}", CACHE_FORMAT_NAMESPACE, url.as_str()),
+            url,
+        }
     }
 }
 

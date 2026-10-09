@@ -633,7 +633,12 @@ impl Preferences {
             network_enforce_tls_onion: false,
             network_http_cache_disabled: false,
             network_http_disk_cache: String::new(),
-            network_http3_enabled: true,
+            // brow (D-016): the custom h3 path ships but stays opt-in for
+            // v0.7 — pooled-connection eviction can close QUIC connections
+            // under in-flight streams and the owner's YouTube truncations
+            // came through it. R-16 fixes make truncation fail loudly, but
+            // h3 stays opt-in until it survives owner A/B validation.
+            network_http3_enabled: false,
             network_http_disk_cache_size: 1024 * 1024 * 100, // Roughtly 100MB
             network_http_proxy_uri: String::new(),
             network_https_proxy_uri: String::new(),
