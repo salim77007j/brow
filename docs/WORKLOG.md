@@ -670,3 +670,77 @@ evidence in `docs/evidence/phase2-single-window/`); E-001 round-3 negative
 reproduction on CI → repro moved to owner hardware per D-007; gates now await
 owner Windows validation of Phase 2 and the owner's "continue" for Phase 3
 (IME/CJK/RTL/fonts).
+
+---
+
+## 2026-10-09 · Phase 3.0a · start check + i18n/IME integration map (no product code changed)
+
+**Owner gate.** Owner said "continue" → Phase 3 (IME/CJK/RTL/DPI) opens per
+V2_PLAN §6.3 and the Phase 2.6 close note.
+
+**Start check.** Branch `v0.7-rebuild` @ 23c9779f4, tree clean, origin synced.
+Phase 2 close state intact; E-001 owner-hardware repro still pending (R-01,
+non-blocking for Phase 3).
+
+**Integration map (code read this session, function/line level).**
+
+1. *Engine fallback tables ALREADY exist and are script-aware — no
+   `components/fonts` changes needed.* `components/fonts/font.rs` FontGroup
+   fallback (`find_fallback_using_system_font_list` → platform
+   `fallback_font_families`, then `find_fallback_using_system_font_api`):
+   - `platform/windows/font_list.rs:56`: Arabic→Microsoft Uighur,
+     Hebrew→Estrangelo Edessa/Cambria, Hiragana/Katakana/CJK
+     Ideographs→Microsoft YaHei + Yu Gothic (line ~223), Hangul→Malgun Gothic.
+   - `platform/mod.rs:58-161` (freetype/Linux): Noto Sans CJK
+     SC/TC/HK/KR/JP + WenQuanYi Micro Hei + TakaoPGothic per script.
+   ⇒ The v0.6.x content tofu is a *font availability* problem, not a missing
+   fallback table: Phase 1 evidence showed DejaVu-covered scripts (Arabic)
+   render correctly while CJK (no font on the sandbox) shows tofu.
+2. *Bundled payload exists but is incomplete.* `ports/brow-shell/assets/fonts/`
+   ships Noto Sans (Latin) + Noto Sans Arabic + OFL license. Release.yml and
+   packaging (wxs/portable/AppImage) copy `assets/fonts` → payload `fonts/`.
+   Missing: any CJK face, any Hebrew face, and the installer hook — the old
+   `install_bundled_fonts()` (idempotent copy into per-user font dir) lived in
+   the deleted two-window `platform.rs` (D-012 deferral).
+3. *egui chrome fonts* (`desktop/gui.rs:86-177`): system-path probing only
+   (Windows msyh.ttc/malgun.ttf; Linux noto-cjk paths). Works on owner Windows;
+   fails on minimal Linux/CI → bundled-path candidates to be added (3.3).
+4. *IME routing* (`desktop/headed_window.rs`): engine-driven
+   `show_ime` (line 457: `set_ime_allowed(true)` + toolbar-offset
+   `set_ime_cursor_area`); event handler line 618 forwards all events incl.
+   `WindowEvent::Ime` to egui first (egui_winit 0.34 has real IME support:
+   upstream #4358/#4794/#4896, RTL TextEdit fix #5547); unconsumed Ime events
+   reach the webview as CompositionEvents (lines 718-757, D-008-style
+   `visible_input_method` guard on Disabled). **Audit flag:** `Ime::Enabled`
+   reaching the webview while the URL bar has focus is the one edge case to
+   exercise in the owner protocol.
+5. *DPI*: `ScaleFactorChanged` intercepted (lines 571-591) → egui zoom +
+   `hidpi_scale_factor_changed()`; CLI `device-pixel-ratio` override supported
+   (egui zoom_with_keyboard disabled deliberately, gui.rs:215-218). No code
+   change needed; CI evidence at 2× to be captured (3.4).
+6. *egui 0.34.3 shaping capability* (CHANGELOG reviewed): IME + RTL TextEdit
+   fixes present; **no complex-script (Arabic joining) shaping evidence** ⇒
+   D-012(d) re-visit concludes: UI Arabic strings stay deferred (D-014, this
+   phase's docs commit); engine content RTL unaffected (Phase 1 evidence).
+
+**Sub-item plan (each: build → verify → commit+push → CI gates).**
+
+- 3.1 Bundle Noto Sans CJK SC subset (pyftsubset; family name MUST stay
+  "Noto Sans CJK SC" to hit the engine fallback table) + Noto Sans Hebrew into
+  `assets/fonts/`; fonts are payload, not binary → 160 MiB binary gate
+  unaffected (D-004/D-006).
+- 3.2 Port `install_bundled_fonts` into `brow-shell-core` (pure + unit-tested)
+  and call it as step 0 of the thin `brow-shell` main (before any font stack
+  initializes).
+- 3.3 `gui.rs::configure_fonts`: bundled exe-relative candidates first, then
+  system paths; add Hebrew/Arabic faces for the chrome.
+- 3.4 CI: i18n test page (zh/ja/ar/he/Latin, checked into docs/evidence) →
+  headed screenshot + a 2× device-pixel-ratio capture, artifacts → committed
+  to `docs/evidence/phase3-i18n/`.
+- 3.5 `docs/OWNER_TESTS_PHASE3.md`: Windows-first IME matrix (zh-CN pinyin,
+  ja, ar, he in URL bar + page form), DPI 100/125/150 checks, RTL visual
+  checklist.
+- 3.6 D-013 (bundle+subset decision), D-014 (UI L10n deferral), RISKS
+  R-05/R-11 refresh, phase close pending owner validation.
+
+**No product code changed in this sub-item** (start check + map only).
