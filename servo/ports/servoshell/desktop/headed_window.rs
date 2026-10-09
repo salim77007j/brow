@@ -13,7 +13,7 @@ use std::rc::Rc;
 
 use euclid::{Angle, Length, Point2D, Rect, Rotation3D, Scale, Size2D, UnknownUnit, Vector3D};
 use keyboard_types::ShortcutMatcher;
-use log::{debug, info};
+use log::{debug, info, warn};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawWindowHandle};
 use servo::{
     AuthenticationRequest, BluetoothDeviceSelectionRequest, Cursor, DeviceIndependentIntRect,
@@ -114,7 +114,10 @@ pub struct HeadedWindow {
     /// pending tick otherwise costs a script-thread round trip (hit-test +
     /// DOM dispatch) before the compositor scrolls — the owner's fast-scroll
     /// lag. Flushed on the next non-wheel event or in `about_to_wait`.
-    pending_wheel_event: RefCell<Option<(WheelDelta, Point2D<f32, DeviceIndependentPixel>)>>,
+    /// The cursor point is a `DevicePoint`: `webview_relative_mouse_point`
+    /// (the only source) is tracked in device pixels, and `WebViewPoint`
+    /// converts from `DevicePoint` — not from `DeviceIndependentPixel`.
+    pending_wheel_event: RefCell<Option<(WheelDelta, DevicePoint)>>,
     /// The position of the mouse cursor after the most recent `MouseMove` event.
     last_mouse_position: Cell<Option<Point2D<f32, DeviceIndependentPixel>>>,
 }
@@ -492,7 +495,15 @@ impl HeadedWindow {
         // disable IME delivery and turn every keystroke into raw WM_CHAR
         // fragments ("separated words, no preedit" on owner hardware). Recording
         // `false` makes its debouncer a no-op while the page owns the IME.
-        self.gui.borrow().sync_egui_ime_allowed(false);
+        // `sync_egui_ime_allowed` needs `&mut Gui`; fall back to a warning if
+        // another borrow is live — a missed debouncer sync is recoverable
+        // (the next egui pass re-syncs), a RefCell panic is not.
+        match self.gui.try_borrow_mut() {
+            Ok(mut gui) => gui.sync_egui_ime_allowed(false),
+            Err(_) => warn!(
+                "brow(4.3): Gui already borrowed — skipped egui IME-allowance sync"
+            ),
+        }
         self.winit_window.set_ime_cursor_area(cursor_origin, cursor_size);
     }
 

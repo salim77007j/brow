@@ -153,6 +153,14 @@ impl ImeSessionTracker {
     }
 }
 
+impl Default for ImeSessionTracker {
+    fn default() -> Self {
+        // Platform-appropriate default: Windows/winit sends `Ime::Disabled`
+        // after every commit; macOS/Linux end sessions silently.
+        Self::new(cfg!(target_os = "windows"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -278,8 +278,9 @@ impl Gui {
             let gl = rendering_context.glow_gl_api();
             // SAFETY: the rendering context was made current above; both
             // getters are plain string lookups on the current GL context.
-            let gl_version = unsafe { gl.get_string(glow::VERSION) };
-            let gl_renderer = unsafe { gl.get_string(glow::RENDERER) };
+            // glow names this getter `get_parameter_string` (glow ≥0.14).
+            let gl_version = unsafe { gl.get_parameter_string(glow::VERSION) };
+            let gl_renderer = unsafe { gl.get_parameter_string(glow::RENDERER) };
             crate::crash_handler::log_startup_note(&format!(
                 "GL_VERSION={gl_version} GL_RENDERER={gl_renderer}"
             ));
@@ -353,7 +354,7 @@ impl Gui {
     /// debouncer believe IME-off is already in effect, so its per-pass
     /// `set_ime_allowed(false)` for an unfocused URL bar can never cancel
     /// the page's IME session (egui-winit 0.34.3 `lib.rs:1105-1115`).
-    pub(crate) fn sync_egui_ime_allowed(&self, allowed: bool) {
+    pub(crate) fn sync_egui_ime_allowed(&mut self, allowed: bool) {
         self.context.egui_winit.set_allow_ime(allowed);
     }
 
