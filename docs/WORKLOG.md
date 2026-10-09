@@ -878,3 +878,51 @@ packager itself (fail-loud). Windows job ~2-3 h; artifact name and download
 path recorded for the owner: Actions → run page → Artifacts (bottom) →
 brow-servo-windows-x86_64. Gate status to be read next session; no phase
 status claims beyond the CI gap fix itself.
+
+---
+
+## 2026-10-09 · Phase 4 research close · 4 root causes locked; PHASE4_PLAN.md pending owner approval
+
+**Owner validation results integrated (artifact a7c59a49e, run 37939128861,
+Windows 11 + AMD iGPU).** Phase 2 single-window VALIDATED on real hardware →
+R-04 CLOSED. Arabic/Chinese page text renders → Phase 3 fonts validated.
+Failing: scroll lag + intermittent crashes; IME composition fragments in
+page fields; YouTube killed by JS parse errors; general slowness.
+
+**Research method.** Four parallel deep-reads (scroll/crash path; IME chain;
+network body pipeline; upstream sweep incl. servo/servo tracker + servo.org
+blog) + five lead spot-checks of load-bearing claims — 5/5 verbatim.
+
+**Root causes (full evidence in docs/PHASE4_PLAN.md §1):**
+1. SCROLL CRASH — CI artifacts build plain `--release` and `[profile.release]`
+   is UNDEFINED (verified absent) = O3/no-LTO = upstream servo/servo #48109
+   segfault class (0xC0000005, opt-level-independent, LTO prevents). This
+   also CLOSES E-001/R-01: our "O2/O3 mystery" was the missing-LTO config all
+   along. Windows crash handler is a NO-OP (upstream #48110; verified) so
+   every owner crash was invisible. Five Rust-panic candidates in the paint
+   path catalogued (R-15).
+2. IME — two shell bugs (R-05): egui-winit 0.34 re-disables set_ime_allowed
+   every egui pass (never learns the page requested IME → WM_IME_* gated off
+   → raw WM_CHAR fragments); Windows Ime::Disabled-after-commit maps to
+   Dismissed → viewport blur → typing dies after each commit
+   (headed_window.rs:743-756 verified). TextInput has no true composing
+   range (emulated insert+select).
+3. YOUTUBE — silent body truncation class (R-16): http_loader.rs:2528-2545
+   (verified) delivers partial bodies as Done on any non-InvalidData error;
+   brow h3 (default ON) adds 30 s chunk timeout/pool eviction/no CL check;
+   truncated bodies poison memory+disk cache across restarts. Privacy engine
+   EXONERATED (userscript payload, zero body rewriting — verified). bugsnag
+   warning = servo PerformanceObserver gap, cosmetic.
+4. PERFORMANCE — O3/no-LTO build + script-synchronized wheel round trip per
+   tick + 76 px/line + no vsync (120 Hz timer) + double render per frame.
+
+**docs/PHASE4_PLAN.md written** (execution queue 4.1-4.7: Windows crash
+capture → profile switch to production-stripped (D-015) → IME relay fixes →
+network truncation+cache hygiene+h3 default-off (D-016) → scroll feel wins →
+upstream pack/YouTube honesty → artifact+report; ~5 sessions; honest
+deferred list: inline preedit UI, off-thread JS compile, PGO, memory floor,
+YouTube API compat). **RISKS.md updated**: R-01 CLOSED-EXPLAINED, R-04
+CLOSED (owner), R-05 root-cause-locked; new R-15/R-16/R-17.
+
+**No product code changed in this entry** — plan awaiting owner approval
+per the owner's directive "Report your plan before implementing".
