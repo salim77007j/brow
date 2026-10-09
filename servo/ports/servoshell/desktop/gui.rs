@@ -275,6 +275,9 @@ impl Gui {
         // (Phase 4.1, servo/servo #48109/#48110).
         #[cfg(target_os = "windows")]
         {
+            // glow 0.17 exposes all GL calls through the `HasContext` trait;
+            // without this import `gl.get_parameter_string` is E0599.
+            use glow::HasContext;
             let gl = rendering_context.glow_gl_api();
             // SAFETY: the rendering context was made current above; both
             // getters are plain string lookups on the current GL context.
