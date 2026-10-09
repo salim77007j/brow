@@ -3,10 +3,20 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 use std::collections::HashMap;
-#[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
+#[cfg(any(
+    target_os = "windows",
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "macos"
+))]
 use std::fs;
-#[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
-use std::path::Path;
+#[cfg(any(
+    target_os = "windows",
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "macos"
+))]
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -83,21 +93,64 @@ fn truncate_with_ellipsis(input: &str, max_length: usize) -> String {
     }
 }
 
-#[cfg(any(target_os = "windows", target_os = "linux", target_os = "freebsd"))]
-fn load_cjk_fonts(font_candidates: &[(&str, &str)]) -> FontDefinitions {
+/// Payload font files (Phase 3, D-013) resolved relative to the running
+/// executable, used when the system font directories lack these families
+/// (minimal Linux containers, CI sandboxes, stripped-down Windows installs).
+/// The egui priority of these is BELOW the per-platform system candidates
+/// (see the insert order in `load_fonts`).
+#[cfg(any(
+    target_os = "windows",
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "macos"
+))]
+fn bundled_font_candidates() -> Vec<(PathBuf, &'static str)> {
+    const PAYLOAD_FONTS: [(&str, &str); 3] = [
+        ("NotoSansSC-Regular.otf", "Noto Sans SC"),
+        ("NotoSansArabic-Regular.ttf", "Noto Sans Arabic"),
+        ("NotoSansHebrew-Regular.ttf", "Noto Sans Hebrew"),
+    ];
+    let Some(exe) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
+    else {
+        return Vec::new();
+    };
+    let bases =
+        std::iter::once(exe.clone()).chain(exe.parent().map(|p| p.to_path_buf()).into_iter());
+    bases
+        .flat_map(|base| {
+            PAYLOAD_FONTS
+                .iter()
+                .map(move |(file, family)| (base.join("fonts").join(file), *family))
+        })
+        .collect()
+}
+
+#[cfg(any(
+    target_os = "windows",
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "macos"
+))]
+fn load_fonts(font_candidates: &[(PathBuf, &str)]) -> FontDefinitions {
     let mut fonts = FontDefinitions::default();
     let mut loaded_font_names = Vec::new();
 
-    for (path_str, font_name) in font_candidates.iter() {
-        let font_path = Path::new(path_str);
-        if font_path.exists() {
-            match fs::read(font_path) {
+    // NOTE: candidates are inserted at position 0 in order, so the LAST
+    // candidate ends up FIRST in the egui family list (highest priority).
+    // Callers list bundled payload fonts FIRST to give system fonts
+    // priority while keeping the bundled ones as true fallbacks.
+    for (path, font_name) in font_candidates.iter() {
+        if path.exists() {
+            match fs::read(path) {
                 Ok(bytes) => {
                     if !fonts.font_data.contains_key(*font_name) {
-                        fonts
-                            .font_data
-                            .insert(font_name.to_string(), Arc::new(FontData::from_owned(bytes)));
-                        loaded_font_names.push(font_name.to_string());
+                        fonts.font_data.insert(
+                            (*font_name).to_string(),
+                            Arc::new(FontData::from_owned(bytes)),
+                        );
+                        loaded_font_names.push((*font_name).to_string());
                         info!("Loaded font: {}", font_name);
                     }
                 },
@@ -120,60 +173,73 @@ fn load_cjk_fonts(font_candidates: &[(&str, &str)]) -> FontDefinitions {
 
 #[cfg(target_os = "windows")]
 fn configure_fonts() -> FontDefinitions {
-    load_cjk_fonts(&[
-        (r"C:\Windows\Fonts\malgun.ttf", "Malgun Gothic"), // Korean
-        (r"C:\Windows\Fonts\msyh.ttc", "Microsoft YaHei"), // Chinese + Japanese
-    ])
+    let mut candidates: Vec<(PathBuf, &str)> = bundled_font_candidates();
+    candidates.extend([
+        (
+            PathBuf::from(r"C:\Windows\Fonts\malgun.ttf"),
+            "Malgun Gothic",
+        ), // Korean
+        (
+            PathBuf::from(r"C:\Windows\Fonts\msyh.ttc"),
+            "Microsoft YaHei",
+        ), // Chinese + Japanese
+    ]);
+    load_fonts(&candidates)
 }
 
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 fn configure_fonts() -> FontDefinitions {
-    load_cjk_fonts(&[
+    let mut candidates: Vec<(PathBuf, &str)> = bundled_font_candidates();
+    candidates.extend([
         (
-            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            PathBuf::from("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
             "Noto Sans CJK",
         ), // Ubuntu/Debian
         (
-            "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+            PathBuf::from("/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc"),
             "Noto Sans CJK",
         ), // Fedora/Arch
         // FreeBSD splits the Noto CJK fonts into regional subsets
         (
-            "/usr/local/share/fonts/noto/NotoSansCJKhk-Regular.otf",
+            PathBuf::from("/usr/local/share/fonts/noto/NotoSansCJKhk-Regular.otf"),
             "Noto Sans CJK HK",
         ),
         (
-            "/usr/local/share/fonts/noto/NotoSansCJKjp-Regular.otf",
+            PathBuf::from("/usr/local/share/fonts/noto/NotoSansCJKjp-Regular.otf"),
             "Noto Sans CJK JP",
         ),
         (
-            "/usr/local/share/fonts/noto/NotoSansCJKkr-Regular.otf",
+            PathBuf::from("/usr/local/share/fonts/noto/NotoSansCJKkr-Regular.otf"),
             "Noto Sans CJK KR",
         ),
         (
-            "/usr/local/share/fonts/noto/NotoSansCJKsc-Regular.otf",
+            PathBuf::from("/usr/local/share/fonts/noto/NotoSansCJKsc-Regular.otf"),
             "Noto Sans CJK SC",
         ),
         (
-            "/usr/local/share/fonts/noto/NotoSansCJKtc-Regular.otf",
+            PathBuf::from("/usr/local/share/fonts/noto/NotoSansCJKtc-Regular.otf"),
             "Noto Sans CJK TC",
         ),
         (
-            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+            PathBuf::from("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"),
             "WenQuanYi Micro Hei",
         ), // common fallback
         (
-            "/usr/local/share/fonts/wqy/wqy-microhei.ttc",
+            PathBuf::from("/usr/local/share/fonts/wqy/wqy-microhei.ttc"),
             "WenQuanYi Micro Hei",
         ), // FreeBSD
-    ])
+    ]);
+    load_fonts(&candidates)
 }
 
 #[cfg(target_os = "macos")]
 fn configure_fonts() -> FontDefinitions {
+    // The system font stack covers CJK via the engine; the egui chrome
+    // still lacks CJK/Arabic/Hebrew in its default fonts, so bundle the
+    // payload fonts here too.
     // TODO: Default proportional fonts: ["Ubuntu-Light", "NotoEmoji-Regular", "emoji-icon-font"]
-    // does not support CJK. Add them for Mac.
-    FontDefinitions::default()
+    // does not support CJK.
+    load_fonts(&bundled_font_candidates())
 }
 
 impl Drop for Gui {
