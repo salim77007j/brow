@@ -316,3 +316,62 @@ re-layered on servoshell after Phase 2 validation (settings key retained);
 (d) Slint L10n (En/Ar) UI strings → Phase 3 (the egui chrome ships English-only
 in Phase 2; page-content RTL is an engine concern, unaffected). Each deferral
 is recorded in RISKS.md and re-visited at its phase start.
+
+---
+
+## D-013 — Font bundle: Noto Sans SC (full) + Noto Sans Hebrew, installed per-user + loaded by-path in egui
+
+**Date:** 2026-10-09
+
+**Context.** Phase 1 evidence: content CJK = tofu everywhere on a system
+without CJK fonts, while DejaVu-covered scripts (Arabic) render — the
+engine's script-aware fallback tables already reference CJK families
+(`components/fonts/platform/mod.rs` pushes "Noto Sans SC"; Windows table
+maps CJK→YaHei/Yu Gothic, Hangul→Malgun, Arabic→Uighur). The missing piece
+is font *availability* on minimal systems, the CI runner, and the egui
+chrome (its default fonts lack CJK/Arabic/Hebrew entirely). D-012(b) defers
+the v0.6.x `install_bundled_fonts` installer to this phase.
+
+**Decision.** Bundle four families in the release payload `fonts/` (Latin +
+Arabic already shipped): **Noto Sans SC** (v2.004 SubsetOTF from noto-cjk —
+full URO 99.9%, kana, fullwidth; 8.3 MB; family string matches the engine
+table) and **Noto Sans Hebrew** (v3.001, 26 KB). Delivery is two-channel:
+(a) `brow-shell-core::fonts::install_bundled_fonts` copies payload → per-user
+font dir (idempotent by size) as step 0 of brow-shell main, before any font
+stack initializes — engine/fontconfig path; (b) egui `configure_fonts` loads
+the same files by exe-relative path with **system candidates keeping
+priority** (bundled fonts are lowest-priority fallbacks in the egui family
+list). Fonts are payload, not binary: the 160 MiB binary gate (D-004/D-006)
+is unaffected; payload grows ~8.6 MB.
+
+**Rejected.** (1) Subsetting NotoSansCJKsc to ~11-13 MB — worse coverage
+trade than the 8.3 MB regional build for no real win. (2) Renaming the
+bundled family to "Noto Sans CJK SC" to hit the table without a diff — the
+table already contains "Noto Sans SC"; faking identity risks collisions with
+a real install. (3) Engine font-loading API work (registering fonts from
+bytes) — much larger surface than the installer for the same outcome.
+(4) Hangul face — deferred: Windows covers Korean via Malgun Gothic
+(fallback table); bundling KR adds MBs for a secondary locale (R-11 keeps
+the gap recorded).
+
+---
+
+## D-014 — UI Arabic strings (D-012(d) revisit) stay deferred: egui lacks proven Arabic shaping
+
+**Date:** 2026-10-09
+
+**Context.** D-012(d) deferred Slint L10n (En/Ar) UI strings to Phase 3 with
+a re-visit requirement. egui 0.34.3's CHANGELOG shows real IME work
+(#4358/#4794/#4896) and an RTL TextEdit fix (#5547), but no evidence of
+Arabic joining/shaping for arbitrary labels (epaint 0.34 uses
+skrifa+vello_cpu; no shaping feature is announced).
+
+**Decision.** The egui chrome stays English-only for v0.7.0. Arabic UI
+strings would render with isolated glyph forms today — a visible quality
+regression vs not shipping them. Page-content Arabic is unaffected (engine
+shaping verified correct in Phase 1 evidence). Re-open when egui ships
+proven complex-script shaping, or when a shell-side shaping pass is
+justified against v0.7.0's scope.
+
+**Rejected.** Shipping Arabic strings behind a settings flag — same
+rendering quality problem, now user-visible.
