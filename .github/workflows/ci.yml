@@ -39,34 +39,6 @@ jobs:
       - name: Unit + integration tests (loopback H3/QUIC and DoH/TLS servers)
         run: cargo test -p brow-net-core --locked || cargo test -p brow-net-core
 
-      - name: Engine net crate tests (truncation + cache hygiene, R-16)
-        # brow (4.4): the engine's net crate now carries the truncation and
-        # cache-namespace tests; it builds without the full engine (no
-        # mozjs/layout) so it stays a fast gate.
-        # Six pre-existing cookie tests fail/flake independently of brow's
-        # changes (verified against the pre-4.4 baseline; they assert
-        # servo's cookie jar behavior and predate Phase 4) plus one flaky
-        # filemanager test (passes in isolation; fails only under full-suite
-        # parallel load). Tracked as R-18 —
-        # remove the skips when they are fixed.
-        run: >-
-          cargo test -p servo-net --locked --
-          --skip http_loader::test_cookie_set_with_httponly_should_not_be_available_using_getcookiesforurl
-          --skip http_loader::test_load_sends_cookie_if_nonhttp
-          --skip http_loader::test_load_sets_cookies_in_the_resource_manager_when_it_get_set_cookie_header_in_response
-          --skip http_loader::test_load_sets_requests_cookies_header_for_url_by_getting_cookies_from_the_resource_manager
-          --skip http_loader::test_redirect_from_x_to_x_provides_x_with_cookie_from_first_response
-          --skip http_loader::test_redirect_from_x_to_y_provides_y_cookies_from_y
-          --skip filemanager_thread::test_filemanager
-          || cargo test -p servo-net --
-          --skip http_loader::test_cookie_set_with_httponly_should_not_be_available_using_getcookiesforurl
-          --skip http_loader::test_load_sends_cookie_if_nonhttp
-          --skip http_loader::test_load_sets_cookies_in_the_resource_manager_when_it_get_set_cookie_header_in_response
-          --skip http_loader::test_load_sets_requests_cookies_header_for_url_by_getting_cookies_from_the_resource_manager
-          --skip http_loader::test_redirect_from_x_to_x_provides_x_with_cookie_from_first_response
-          --skip http_loader::test_redirect_from_x_to_y_provides_y_cookies_from_y
-          --skip filemanager_thread::test_filemanager
-
       - name: Build the benchmark harness
         run: cargo build -p brow-bench
 
@@ -250,6 +222,35 @@ jobs:
         run: |
           cd servo
           cargo build --locked --profile production-stripped -p brow-shell || cargo build --profile production-stripped -p brow-shell
+
+      - name: Engine net crate tests (truncation + cache hygiene, R-16)
+        # brow (4.4): the engine's net crate now carries the truncation and
+        # cache-namespace tests. Lives in THIS job because servo-net's
+        # dependency graph needs the full servo build deps (freetype/harfbuzz
+        # sys crates) that only this job bootstraps; after `mach build` the
+        # crate is already compiled, so the tests are nearly free here.
+        # Six pre-existing cookie tests fail/flake independently of brow's
+        # changes (verified against the pre-4.4 baseline; they assert
+        # servo's cookie jar behavior and predate Phase 4) plus one flaky
+        # filemanager test (passes in isolation; fails only under full-suite
+        # parallel load). Tracked as R-18 — remove the skips when fixed.
+        run: >-
+          cargo test -p servo-net --locked --
+          --skip http_loader::test_cookie_set_with_httponly_should_not_be_available_using_getcookiesforurl
+          --skip http_loader::test_load_sends_cookie_if_nonhttp
+          --skip http_loader::test_load_sets_cookies_in_the_resource_manager_when_it_get_set_cookie_header_in_response
+          --skip http_loader::test_load_sets_requests_cookies_header_for_url_by_getting_cookies_from_the_resource_manager
+          --skip http_loader::test_redirect_from_x_to_x_provides_x_with_cookie_from_first_response
+          --skip http_loader::test_redirect_from_x_to_y_provides_y_cookies_from_y
+          --skip filemanager_thread::test_filemanager
+          || cargo test -p servo-net --
+          --skip http_loader::test_cookie_set_with_httponly_should_not_be_available_using_getcookiesforurl
+          --skip http_loader::test_load_sends_cookie_if_nonhttp
+          --skip http_loader::test_load_sets_cookies_in_the_resource_manager_when_it_get_set_cookie_header_in_response
+          --skip http_loader::test_load_sets_requests_cookies_header_for_url_by_getting_cookies_from_the_resource_manager
+          --skip http_loader::test_redirect_from_x_to_x_provides_x_with_cookie_from_first_response
+          --skip http_loader::test_redirect_from_x_to_y_provides_y_cookies_from_y
+          --skip filemanager_thread::test_filemanager
 
       - name: Quality gate — binary size (DECISIONS D-004, D-006)
         # Gate applies to the production-stripped profile this job builds
