@@ -270,6 +270,22 @@ impl Gui {
             false,
         );
 
+        // Record the actual GL driver strings into the crash log: ANGLE/driver
+        // regressions are the primary suspected crash class on owner hardware
+        // (Phase 4.1, servo/servo #48109/#48110).
+        #[cfg(target_os = "windows")]
+        {
+            let gl = rendering_context.glow_gl_api();
+            // SAFETY: the rendering context was made current above; both
+            // getters are plain string lookups on the current GL context.
+            let gl_version = unsafe { gl.get_string(glow::VERSION) };
+            let gl_renderer = unsafe { gl.get_string(glow::RENDERER) };
+            crate::crash_handler::log_startup_note(&format!(
+                "GL_VERSION={gl_version} GL_RENDERER={gl_renderer}"
+            ));
+            info!("OpenGL version={gl_version} renderer={gl_renderer}");
+        }
+
         let font_definitions = configure_fonts();
         context.egui_ctx.set_fonts(font_definitions);
 

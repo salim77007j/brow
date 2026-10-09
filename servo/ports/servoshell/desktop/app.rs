@@ -112,6 +112,13 @@ impl App {
 
         servo.setup_logging();
 
+        // Surface the crash-capture directory so owner-reported crash files
+        // (minidumps + brow.log under %LOCALAPPDATA%\brow\crashes on Windows)
+        // can be located without guessing (Phase 4.1, servo/servo #48110).
+        if let Some(dir) = crate::crash_handler::crash_log_dir() {
+            log::info!("brow crash capture active: minidumps and brow.log in {}", dir.display());
+        }
+
         let user_content_manager = Rc::new(UserContentManager::new(&servo));
         for script in load_userscripts(self.servoshell_preferences.userscripts_directory.as_deref())
             .expect("Loading userscripts failed")

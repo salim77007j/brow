@@ -42,6 +42,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     } else {
         println!("cargo:rustc-cfg=servo_do_not_use_in_production");
     }
+    // Bake the build profile into the binary so crash logs can identify the
+    // exact configuration (dev/release/production-stripped) a dump came from.
+    println!("cargo:rustc-env=BROW_BUILD_PROFILE={profile}");
 
     // Note: We can't use `#[cfg(windows)]`, since that would check the host platform
     // and not the target platform

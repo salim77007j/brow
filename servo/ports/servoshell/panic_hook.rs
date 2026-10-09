@@ -22,6 +22,14 @@ pub(crate) fn panic_hook(info: &PanicHookInfo) {
     };
     let current_thread = thread::current();
     let name = current_thread.name().unwrap_or("<unnamed>");
+    // Persist panics to the crash log so they are visible even when the shell
+    // was launched by double-click and stderr is detached (Phase 4.1, #48110).
+    crate::crash_handler::log_panic(
+        msg,
+        name,
+        info.location().map(|location| location.file()),
+        info.location().map(|location| location.line()),
+    );
     let stderr = std::io::stderr();
     let mut stderr = stderr.lock();
     if let Some(location) = info.location() {
