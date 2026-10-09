@@ -744,3 +744,52 @@ non-blocking for Phase 3).
   R-05/R-11 refresh, phase close pending owner validation.
 
 **No product code changed in this sub-item** (start check + map only).
+
+---
+
+## 2026-10-09 · Phase 3.1-3.6 · fonts/IME/DPI landed; owner protocol written; CI evidence step live
+
+**WHAT (per sub-item, one commit each).**
+- 3.0a (ae215c05e): start check + full i18n/IME/DPI integration map (code
+  read at function/line level; engine fallback tables confirmed present —
+  zero components/fonts diff needed).
+- 3.1 (8cf658ed6): bundled NotoSansSC-Regular.otf (8.3 MB, family
+  "Noto Sans SC", noto-cjk SubsetOTF v2.004) + NotoSansHebrew-Regular.ttf
+  (26 KB, v3.001); OFL notice extended; fonts/README.md documents
+  provenance/coverage/gaps (coverage verified with fontTools: kana 189/191
+  where the 2 missing are unassigned codepoints; URO 20,976/20,992 —
+  U+9FF0..9FFF Unicode 15.1; fullwidth missing only unassigned/halfwidth
+  Hangul; no Hangul — see D-013).
+- 3.2 (269ce89d0): brow-shell-core/src/fonts.rs — pure-std idempotent
+  installer (size-checked copy, non-font skip, refresh-on-change, missing-dir
+  zero) + step-0 hook in thin brow-shell main; Windows DirectWrite caveat
+  documented in module docs.
+- 3.3 (ede44c697): gui.rs load_cjk_fonts → load_fonts over (PathBuf, family)
+  candidates; bundled_font_candidates() resolves payload fonts/ exe-relative
+  (exe_dir + parent); bundled fonts are LAST in egui priority (system fonts
+  keep priority — regression guard 4.1 of the owner protocol); macOS now
+  loads the bundle instead of defaults-only.
+- 3.4 (e906d81f0): CI evidence step "i18n fonts + 2x DPI" — payload fonts/
+  next to the binary, checked-in i18n test page loaded via file://, headed
+  captures at 1x and --device-pixel-ratio 2.0, artifact
+  brow-phase3-i18n-screenshots; encodes the Phase 2 capture lessons.
+- 3.6a (91f89472e): D-013 (bundle decision + rejected alternatives) and
+  D-014 (UI Arabic strings stay deferred — egui shaping unproven; page RTL
+  unaffected).
+- This commit: RISKS R-05 (protocol ready) / R-11 (mitigated, Hangul gap
+  recorded) updates + this entry; docs/OWNER_TESTS_PHASE3.md added in the
+  same push (3.5).
+
+**WHY.** The v0.6.x CJK-tofu class is a font-availability problem, not a
+fallback-table problem (Phase 1 evidence + this phase's code read). Smallest
+correct fix: make the referenced families exist, keep system-font priority,
+honestly record the Hangul gap and the UI-L10n deferral.
+
+**VERIFIED (local).** cargo test -p brow-shell-core 60/60 (incl. 3 new font
+tests); clippy 0 warnings on touched files; rustfmt clean on every touched
+file (pre-existing drift in other files intentionally left untouched —
+change isolation); ci.yml parses (python yaml). **Pending CI (push-triggered,
+e906d81f0 + docs pushes):** fast gates, servoshell compile (D-003 — CI-only),
+Windows build, i18n/2x-DPI captures; results to be recorded when read from
+the GitHub Actions API; owner IME matrix is the R-05 closer and cannot be
+run in CI by design (V2_PLAN §8.2).
