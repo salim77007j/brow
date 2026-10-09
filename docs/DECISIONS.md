@@ -375,3 +375,34 @@ justified against v0.7.0's scope.
 
 **Rejected.** Shipping Arabic strings behind a settings flag — same
 rendering quality problem, now user-visible.
+
+## D-015 — CI artifacts build `production-stripped` (LTO), not plain `--release`
+
+**Date:** 2026-10-09
+
+**Context.** Owner-hardware validation of the CI artifact (a7c59a49e, run
+37939128861) showed intermittent crashes during fast scrolling. Research
+(Phase 4, docs/PHASE4_PLAN.md §1.1) identified the build configuration as
+the root cause: ci.yml built plain `--release` while `[profile.release]` is
+NOT defined in servo/Cargo.toml — i.e. opt-level 3, no LTO. That is exactly
+upstream servo/servo #48109's segfault class (0xC0000005 on Windows,
+reproducible on pure upstream, independent of opt-level, prevented by LTO).
+It also explains brow's own E-001 mystery: the O2/O3 wikipedia segfault
+ladder matched the no-LTO axis, not the optimization level. release.yml
+already builds `production-stripped` (LTO, codegen-units=1, opt-level="s")
+— the family every v0.6.x release artifact used — so CI artifacts were the
+only builds sitting in the crashing configuration.
+
+**Decision.** ci.yml (Linux + Windows jobs) now builds
+`--profile production-stripped` for both mach (engine) and cargo
+(brow-shell); every `target/release` path becomes
+`target/production-stripped`. The 160 MiB size gate (D-006) is unchanged:
+LTO+opt-level="s" binaries are historically the smaller ones.
+
+**Consequences.** CI artifacts and release artifacts share one codegen
+identity, so owner validation results transfer to tagged releases. E-001 is
+CLOSED-EXPLAINED (missing LTO, not opt-level). The O3+LTO performance
+experiment is deliberately NOT adopted now — it is a new untested
+configuration (recorded as optional E-002 for owner A/B later); v0.7
+optimizes for the proven-stable codegen. Raw `--release` builds stay
+available locally for experiments but are no longer shipped or gated.

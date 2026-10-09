@@ -203,10 +203,16 @@ jobs:
           cargo --version
           rustc --version
 
-      - name: Build (release)
+      - name: Build (production-stripped, LTO)
+        # Phase 4.2 (D-015): CI artifacts now build the same proven profile as
+        # release.yml — LTO + codegen-units=1 + opt-level="s". Plain `release`
+        # is O3/no-LTO, which is upstream servo/servo #48109's segfault class
+        # (0xC0000005, independent of opt-level, prevented by LTO) — the exact
+        # configuration the owner's fast-scroll crashes came from (E-001
+        # explained; R-01 CLOSED-EXPLAINED).
         run: |
           cd servo
-          ./mach build --release
+          ./mach build --locked --profile production-stripped
 
       - name: Build brow-shell (product binary, shares the dependency build)
         # Phase 0 gate (mirrors release.yml's matching step): mach cannot take
@@ -215,21 +221,23 @@ jobs:
         # graph reused; only brow-shell itself compiles.
         run: |
           cd servo
-          cargo build --locked --release -p brow-shell || cargo build --release -p brow-shell
+          cargo build --locked --profile production-stripped -p brow-shell || cargo build --profile production-stripped -p brow-shell
 
       - name: Quality gate — binary size (DECISIONS D-004, D-006)
-        # Gate applies to the stripped default-`release` profile (what this
-        # job builds), measured identically on every push. Baseline measured
-        # 147 MiB on the first gated run (37652829943); D-006 tightens the
-        # gate to 160 MiB (+9% headroom for toolchain/PGO variance).
+        # Gate applies to the production-stripped profile this job builds
+        # (Phase 4.2/D-015: LTO + opt-level="s" — historically the SMALLER
+        # binaries, so the 160 MiB gate keeps its headroom), measured
+        # identically on every push. Baseline measured 147 MiB on the first
+        # gated run (37652829943); D-006 tightens the gate to 160 MiB (+9%
+        # headroom for toolchain/PGO variance).
         run: |
           cd servo
           SIZE_GATE_MIB=160
-          cp target/release/brow-shell "$RUNNER_TEMP/brow-sizecheck"
+          cp target/production-stripped/brow-shell "$RUNNER_TEMP/brow-sizecheck"
           strip "$RUNNER_TEMP/brow-sizecheck"
           BYTES=$(stat -c%s "$RUNNER_TEMP/brow-sizecheck")
           ACTUAL_MIB=$((BYTES / 1024 / 1024))
-          echo "brow-shell (stripped, release): ${ACTUAL_MIB} MiB (gate ${SIZE_GATE_MIB} MiB)" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "brow-shell (stripped, production-stripped): ${ACTUAL_MIB} MiB (gate ${SIZE_GATE_MIB} MiB)" | tee -a "$GITHUB_STEP_SUMMARY"
           if [ "$ACTUAL_MIB" -gt "$SIZE_GATE_MIB" ]; then
             echo "::error::binary size gate FAILED: ${ACTUAL_MIB} MiB > ${SIZE_GATE_MIB} MiB"
             exit 1
@@ -251,7 +259,7 @@ jobs:
           export BROW_DATA_DIR="$RUNNER_TEMP/brow-data"; mkdir -p "$BROW_DATA_DIR"
           printf '{"home_page": "https://example.com", "block_ads": true}\n' > "$BROW_DATA_DIR/settings.json"
           RUST_LOG=info timeout 90 xvfb-run -a -s "-screen 0 1280x800x24" \
-            target/release/brow-shell > "$RUNNER_TEMP/brow-shell-smoke.log" 2>&1 &
+            target/production-stripped/brow-shell > "$RUNNER_TEMP/brow-shell-smoke.log" 2>&1 &
           PID=$!
           SIGNALS=0
           for i in $(seq 1 80); do
@@ -271,7 +279,7 @@ jobs:
           RSS_KB=$(awk '/VmRSS/{print $2}' "/proc/${BS_PID:-0}/status" 2>/dev/null || echo 0)
           ALIVE=$(kill -0 "$PID" 2>/dev/null && echo yes || echo no)
           kill "$PID" 2>/dev/null || true
-          pkill -f 'target/release/brow-shell' 2>/dev/null || true
+          pkill -f 'target/production-stripped/brow-shell' 2>/dev/null || true
           echo "brow-shell smoke: signals=$SIGNALS alive=$ALIVE bs_pid=${BS_PID:-none} rss_kb=$RSS_KB" | tee -a "$GITHUB_STEP_SUMMARY"
           if [ "$SIGNALS" != "1" ]; then
             echo "::error::brow-shell smoke FAILED (engine signals absent)"
@@ -307,7 +315,7 @@ jobs:
           # from outside, even with the right display number).
           xvfb-run -a -s "-screen 0 1280x800x24" bash -c '
             set +e
-            RUST_LOG=info target/release/brow-shell > "'"$RUNNER_TEMP"'/brow-shot.log" 2>&1 &
+            RUST_LOG=info target/production-stripped/brow-shell > "'"$RUNNER_TEMP"'/brow-shot.log" 2>&1 &
             BPID=$!
             for i in $(seq 1 60); do
               grep -q "fingerprint defenses active" "'"$RUNNER_TEMP"'/brow-shot.log" 2>/dev/null && break
@@ -351,7 +359,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y imagemagick
           cd servo
-          cp -R "$GITHUB_WORKSPACE/servo/ports/brow-shell/assets/fonts" target/release/fonts
+          cp -R "$GITHUB_WORKSPACE/servo/ports/brow-shell/assets/fonts" target/production-stripped/fonts
           export LIBGL_ALWAYS_SOFTWARE=1
           export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-brow-i18n"; mkdir -p "$XDG_RUNTIME_DIR"
           if [ -f /usr/share/glvnd/egl_vendor.d/50_mesa.json ]; then
@@ -361,7 +369,7 @@ jobs:
           printf '{"home_page": "file://%s", "block_ads": true}\n' "$GITHUB_WORKSPACE/docs/evidence/phase3-i18n/i18n-test.html" > "$BROW_DATA_DIR/settings.json"
           xvfb-run -a -s "-screen 0 1280x800x24" bash -c '
             set +e
-            RUST_LOG=info target/release/brow-shell > "'"$RUNNER_TEMP"'/brow-i18n.log" 2>&1 &
+            RUST_LOG=info target/production-stripped/brow-shell > "'"$RUNNER_TEMP"'/brow-i18n.log" 2>&1 &
             BPID=$!
             for i in $(seq 1 60); do
               grep -q "fingerprint defenses active" "'"$RUNNER_TEMP"'/brow-i18n.log" 2>/dev/null && break
@@ -377,7 +385,7 @@ jobs:
           ' || echo "i18n capture exited nonzero — best-effort"
           xvfb-run -a -s "-screen 0 1280x800x24" bash -c '
             set +e
-            RUST_LOG=info target/release/brow-shell --device-pixel-ratio 2.0 > "'"$RUNNER_TEMP"'/brow-dpi2.log" 2>&1 &
+            RUST_LOG=info target/production-stripped/brow-shell --device-pixel-ratio 2.0 > "'"$RUNNER_TEMP"'/brow-dpi2.log" 2>&1 &
             BPID=$!
             for i in $(seq 1 60); do
               grep -q "fingerprint defenses active" "'"$RUNNER_TEMP"'/brow-dpi2.log" 2>/dev/null && break
@@ -405,8 +413,8 @@ jobs:
         # named `servoshell` (see ports/servoshell/Cargo.toml [[bin]]).
         run: |
           cd servo
-          ls target/release/ | head -20
-          ./target/release/servoshell --version
+          ls target/production-stripped/ | head -20
+          ./target/production-stripped/servoshell --version
 
       - name: Smoke test — headless render of example.com
         run: |
@@ -418,7 +426,7 @@ jobs:
             export __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json
           fi
           timeout 120 xvfb-run -a -s "-screen 0 1280x800x24" \
-            ./target/release/servoshell -z -o "$RUNNER_TEMP/shot.png" https://example.com || true
+            ./target/production-stripped/servoshell -z -o "$RUNNER_TEMP/shot.png" https://example.com || true
           test -s "$RUNNER_TEMP/shot.png" && echo "headless render OK: $(stat -c%s "$RUNNER_TEMP/shot.png") bytes"
 
       - name: Smoke test — DoH and HTTP/3 prefs present
@@ -427,12 +435,12 @@ jobs:
           grep -r "network_dns_over_https_enabled\|network_http3_enabled" components/config/prefs.rs > /dev/null && echo "phase 2 network prefs registered"
 
       - name: Package artifact
-        # The binary lands in target/release; resources stay at the repo
+        # The binary lands in target/production-stripped; resources stay at the repo
         # root (mach does not copy them into target/). Bundle both as
         # top-level members: servoshell + resources/.
         run: |
           cd servo
-          cp target/release/servoshell "$RUNNER_TEMP/"
+          cp target/production-stripped/servoshell "$RUNNER_TEMP/"
           tar -czf "$RUNNER_TEMP/brow-servo-linux-x86_64.tar.gz" \
             -C "$RUNNER_TEMP" servoshell \
             -C "$GITHUB_WORKSPACE/servo" resources
@@ -506,22 +514,24 @@ jobs:
           .\mach fetch
           .\mach bootstrap-gstreamer
 
-      - name: Build servoshell (release, locked)
+      - name: Build servoshell (production-stripped, LTO)
+        # Phase 4.2 (D-015): exits upstream #48109's O3/no-LTO segfault class;
+        # same proven profile as release.yml and the v0.6.x artifacts.
         working-directory: servo
         shell: pwsh
-        run: .\mach build --locked --release
+        run: .\mach build --locked --profile production-stripped
 
       - name: Build brow-shell (product binary, shares the dependency build)
         working-directory: servo
         shell: pwsh
-        run: cargo build --locked --release -p brow-shell
+        run: cargo build --locked --profile production-stripped -p brow-shell
 
       - name: Smoke test — servoshell reports version, brow-shell exists
         shell: pwsh
         run: |
-          .\servo\target\release\servoshell.exe --version
-          if (-not (Test-Path .\servo\target\release\brow-shell.exe)) {
-            throw "brow-shell.exe missing from target/release"
+          .\servo\target\production-stripped\servoshell.exe --version
+          if (-not (Test-Path .\servo\target\production-stripped\brow-shell.exe)) {
+            throw "brow-shell.exe missing from target/production-stripped"
           }
           Write-Host "windows compile gate OK"
 
@@ -538,9 +548,9 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path packaging\payload | Out-Null
-          Copy-Item servo\target\release\brow-shell.exe packaging\payload\brow.exe
-          Copy-Item servo\target\release\servoshell.exe packaging\payload\brow-classic.exe
-          Copy-Item servo\target\release\*.dll packaging\payload
+          Copy-Item servo\target\production-stripped\brow-shell.exe packaging\payload\brow.exe
+          Copy-Item servo\target\production-stripped\servoshell.exe packaging\payload\brow-classic.exe
+          Copy-Item servo\target\production-stripped\*.dll packaging\payload
           Copy-Item servo\resources packaging\payload\resources -Recurse
           Copy-Item servo\ports\brow-shell\assets\fonts packaging\payload\fonts -Recurse
 
