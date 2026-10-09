@@ -806,3 +806,41 @@ screenshots will be committed into docs/evidence/phase3-i18n/ from the
 artifact, and R-05 closes only via the owner's docs/OWNER_TESTS_PHASE3.md
 run. Next session re-entry: clone, checkout v0.7-rebuild, read run
 37868604198 (or its per-ref successor) first.
+
+---
+
+## 2026-10-09 · Phase 3 close-out · CI evidence read GREEN, captures committed — phase CI-side CLOSED
+
+**Re-entry per the 3.6 close note.** Read run 37869415068 (head 136fa8d1a)
+from the GitHub Actions API: **completed / success — 7/7 jobs green**,
+including the two that were IN-PROGRESS at last session's close: the Linux
+engine build + smoke + 3.4 i18n/2×-DPI captures, and the Windows build gate
+(D-005). Fast gates (incl. the 3 new font tests, brow-shell-core 60/60 and
+the D-003 servoshell compile gate for 3.3's gui.rs) were already green.
+
+**Evidence downloaded and committed (this commit).**
+- `docs/evidence/phase3-i18n/brow-i18n.png` (1×) and `brow-dpi2x.png`
+  (2× device-pixel-ratio) from artifact 11590519422 of that run; visually
+  verified before commit (owner-visible proof, not log-greens):
+  zh-CN Hanzi render as glyphs not tofu (the test page's own claim
+  "浏览器应显示汉字而不是方框" holds), ja hiragana/katakana render,
+  Arabic shows connected shaping right-aligned, Hebrew right-aligned,
+  ①②③ + fullwidth forms render, mixed "你好 مرحبا こんにちは" renders in
+  the form input, "0 blocked" privacy item intact; 2× capture shows clean
+  doubled raster with correct reflow and scaling chrome.
+- `docs/evidence/phase3-i18n/README.md`: provenance (run/job/step/artifact
+  IDs) + what each capture proves + honest gaps (no Hangul in bundle —
+  R-11; IME composition NOT capturable from Xvfb — R-05 owner matrix is
+  the closer; UI L10n stays deferred — D-014).
+
+**RISKS touched.** R-05 mitigation extended with the CI evidence pointer;
+status stays OPEN (owner IME matrix pending — by design not CI-runnable).
+R-11 unchanged (MITIGATED, Hangul gap recorded).
+
+**Phase 3 verdict.** CI-side close conditions are ALL met; phase CI-side
+CLOSED on this commit. Owner-side gates remain open and are the phase's
+acceptance condition: docs/OWNER_TESTS_PHASE3.md (IME zh/ja/ar/he matrix,
+DPI 100/125/150, RTL checklist, font priority regression check 4.1).
+Per the standing protocol the next phase (Phase 4 engine performance)
+opens only on the owner's "continue"; the owner's Windows test results
+from Phase 2 + Phase 3 protocols are the parallel owner-track inputs.
