@@ -524,3 +524,36 @@ jobs:
             throw "brow-shell.exe missing from target/release"
           }
           Write-Host "windows compile gate OK"
+
+      # Owner-validation payload (R-04/R-05): the compile gate alone left the
+      # v0.7 Windows build undiscoverable — Actions uploaded only the Linux
+      # binary, so the owner had no downloadable Windows artifact to run the
+      # Phase 2 single-window and Phase 3 IME/DPI protocols against. Mirror
+      # release.yml's stage+portable steps (minus WiX/MSI, which stays a
+      # tag-time job) so every green push yields a runnable zip. The payload
+      # contract is enforced by make-portable.ps1 itself (throws if brow.exe,
+      # resources or the ANGLE/GStreamer/MSVC DLLs are missing), so a broken
+      # stage fails loudly here instead of shipping a zip that cannot start.
+      - name: Stage payload (mirrors release.yml)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path packaging\payload | Out-Null
+          Copy-Item servo\target\release\brow-shell.exe packaging\payload\brow.exe
+          Copy-Item servo\target\release\servoshell.exe packaging\payload\brow-classic.exe
+          Copy-Item servo\target\release\*.dll packaging\payload
+          Copy-Item servo\resources packaging\payload\resources -Recurse
+          Copy-Item servo\ports\brow-shell\assets\fonts packaging\payload\fonts -Recurse
+
+      - name: Portable zip
+        shell: pwsh
+        run: |
+          powershell -File packaging\windows\make-portable.ps1 `
+            -PayloadDir packaging\payload -Version "0.7.0-pre" -OutDir packaging\dist
+
+      - name: Upload Windows portable zip (owner validation)
+        uses: actions/upload-artifact@v4
+        with:
+          name: brow-servo-windows-x86_64
+          path: packaging/dist/brow-*-x86_64-windows-portable.zip
+          if-no-files-found: error
+          retention-days: 14

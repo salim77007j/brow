@@ -844,3 +844,37 @@ DPI 100/125/150, RTL checklist, font priority regression check 4.1).
 Per the standing protocol the next phase (Phase 4 engine performance)
 opens only on the owner's "continue"; the owner's Windows test results
 from Phase 2 + Phase 3 protocols are the parallel owner-track inputs.
+
+---
+
+## 2026-10-09 · CI gap fix · Windows job now uploads a runnable portable zip (owner-validation unblock)
+
+**Owner question that surfaced it.** "Where is the Windows build in Actions?"
+Audit of run 37875091261 artifacts: only brow-servo-linux-x86_64 + the two
+screenshot artifacts exist. The Windows job (build-servo-windows) is a
+compile gate by design ("release recipe minus packaging", D-005) — it built
+brow-shell.exe and threw it away. Consequence: NO downloadable v0.7 Windows
+build existed anywhere (Releases only carry the failed v0.6.0/v0.6.1), which
+blocked the owner from running the Phase 2 single-window + Phase 3 IME/DPI
+validation protocols (R-04/R-05 closers) on real hardware.
+
+**WHAT (this commit, CI-only, no product code).** build-servo-windows gains
+three steps after the compile-gate smoke: Stage payload (brow-shell.exe →
+brow.exe, servoshell.exe → brow-classic.exe, mach-staged runtime DLLs,
+resources/, bundled fonts/ — mirrors release.yml paths at the --release
+profile), Portable zip via the existing make-portable.ps1 (self-enforcing
+payload contract: throws on missing exe/resources/DLLs), and Upload artifact
+`brow-servo-windows-x86_64` (retention 14 days, matching the Linux binary
+artifact). WiX/MSI stays tag-time in release.yml — validation needs the zip,
+not the installer.
+
+**WHY.** R-04/R-05 are owner-hardware closers; without a runnable Windows
+artifact the phase acceptance is structurally impossible. Smallest correct
+fix reuses the proven release-packaging path so the zip layout matches what
+v0.7.0 will ship.
+
+**VERIFIED.** ci.yml parses (python yaml). Payload contract enforced by the
+packager itself (fail-loud). Windows job ~2-3 h; artifact name and download
+path recorded for the owner: Actions → run page → Artifacts (bottom) →
+brow-servo-windows-x86_64. Gate status to be read next session; no phase
+status claims beyond the CI gap fix itself.
