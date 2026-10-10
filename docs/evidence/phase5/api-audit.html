@@ -32,7 +32,7 @@ the document title so a screenshot is also evidence.</p>
     "performance.mark":      ["must", function () { return typeof performance.mark === "function"; }],
     "performance.measure":   ["must", function () { return typeof performance.measure === "function"; }],
     "performance.getEntriesByType": ["must", function () { return typeof performance.getEntriesByType === "function"; }],
-    "supportedEntryTypes":   ["must", function () { return Array.isArray(performance.supportedEntryTypes) && performance.supportedEntryTypes.length > 0; }],
+    "supportedEntryTypes":   ["must", function () { return typeof PerformanceObserver === "function" && Array.isArray(PerformanceObserver.supportedEntryTypes) && PerformanceObserver.supportedEntryTypes.length > 0; }],
     // Animations
     "element.animate":       ["must", function () { return typeof Element.prototype.animate === "function"; }],
     "Animation":             ["must", function () { return typeof Animation === "function"; }],
@@ -175,6 +175,8 @@ the document title so a screenshot is also evidence.</p>
     probes.canvasToStringNative = /native code/.test(CanvasRenderingContext2D.prototype.getImageData.toString());
   } catch (e) { probes.canvasToStringNative = false; }
   result.probes = probes;
+  // Evidence: the actual entry-type list the engine reports.
+  try { result.supportedEntryTypes = Array.from(PerformanceObserver.supportedEntryTypes); } catch (e) { result.supportedEntryTypes = null; }
 
   result.score_must_ok = result.missing_must.length === 0;
   result.total = Object.keys(checks).length;
