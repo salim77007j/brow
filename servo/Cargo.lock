@@ -1203,6 +1203,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "servo-config",
  "url",
 ]
 

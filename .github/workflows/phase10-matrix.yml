@@ -1,0 +1,168 @@
+name: brow Phase 10 — 50-site real-web matrix
+
+# brow (phase 10): the full 50-site verification matrix. Runs on manual
+# dispatch (after each phase lands) and nightly — NOT on every push (the
+# push pipeline keeps the 12-site subset for fast feedback; this job adds
+# ~45 min of sequential headless loads).
+#
+# Per site: PGID-scoped process-tree peak RSS, panic count (GATE: 0),
+# JS console error count, screenshot. Evidence lands in
+# docs/evidence/phase10/ (committed on the reporting commit) and in the
+# brow-phase10-evidence artifact.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *" # nightly, 03:00 UTC
+
+concurrency:
+  group: phase10-matrix
+  cancel-in-progress: true
+
+jobs:
+  matrix-50:
+    name: 50-site headless matrix (Linux x86_64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - name: Checkout brow (with vendored servo/)
+        uses: actions/checkout@v4
+
+      - name: Free disk space for the build tree
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          sudo apt-get clean
+          df -h /
+
+      - name: Install Rust toolchain (pinned by servo/rust-toolchain.toml)
+        run: |
+          rustup toolchain install $(awk -F'"' '/channel =/ {print $2}' rust-toolchain.toml) --profile minimal
+          rustup default $(awk -F'"' '/channel =/ {print $2}' rust-toolchain.toml)
+
+      - name: Install headless compile prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libx11-dev libfontconfig1-dev libgl1-mesa-dev libgles2-mesa-dev \
+            libegl1-mesa-dev libosmesa6-dev libharfbuzz-dev libdbus-1-dev \
+            libwebp-dev libunwind-dev xvfb imagemagick
+
+      - name: Build servoshell (production-stripped, LTO — D-015)
+        run: |
+          cd servo
+          ./mach build --locked --profile production-stripped
+          ./target/production-stripped/servoshell --version
+
+      - name: 50-site headless matrix
+        run: |
+          cd servo
+          export RUST_BACKTRACE=1
+          export LIBGL_ALWAYS_SOFTWARE=1
+          mkdir -p "$RUNNER_TEMP/phase10"
+
+          # 50 real sites across the classes a daily-driver browser meets:
+          # search, reference, news, social, dev, docs, video, commerce,
+          # webapps, government, edu, entertainment.
+          sites="\
+          example:https://example.com \
+          wikipedia:https://en.wikipedia.org/wiki/Main_Page \
+          github:https://github.com \
+          duckduckgo:https://duckduckgo.com \
+          bing:https://www.bing.com \
+          stackoverflow:https://stackoverflow.com \
+          mdn:https://developer.mozilla.org/en-US/ \
+          reddit:https://www.reddit.com \
+          hackernews:https://news.ycombinator.com \
+          bbc:https://www.bbc.com \
+          w3schools:https://www.w3schools.com \
+          xkcd:https://xkcd.com \
+          google:https://www.google.com \
+          amazon:https://www.amazon.com \
+          ebay:https://www.ebay.com \
+          nytimes:https://www.nytimes.com \
+          cnn:https://www.cnn.com \
+          theguardian:https://www.theguardian.com \
+          reuters:https://www.reuters.com \
+          bloomberg:https://www.bloomberg.com \
+          forbes:https://www.forbes.com \
+          medium:https://medium.com \
+          wordpress:https://wordpress.org \
+          wix:https://www.wix.com \
+          squarespace:https://www.squarespace.com \
+          spotify:https://open.spotify.com \
+          soundcloud:https://soundcloud.com \
+          twitch:https://www.twitch.tv \
+          vimeo:https://vimeo.com \
+          dribbble:https://dribbble.com \
+          behance:https://www.behance.net \
+          deviantart:https://www.deviantart.com \
+          pinterest:https://www.pinterest.com \
+          linkedin:https://www.linkedin.com \
+          x-twitter:https://x.com \
+          instagram:https://www.instagram.com \
+          facebook:https://www.facebook.com \
+          whatsapp:https://web.whatsapp.com \
+          telegram:https://web.telegram.org \
+          discord:https://discord.com \
+          slack:https://slack.com \
+          zoom:https://zoom.us \
+          outlook:https://outlook.live.com \
+          gmail:https://mail.google.com \
+          drive:https://drive.google.com \
+          notion:https://www.notion.so \
+          figma:https://www.figma.com \
+          canva:https://www.canva.com \
+          chatgpt:https://chatgpt.com \
+          youtube:https://www.youtube.com"
+
+          count=$(echo "$sites" | wc -w)
+          echo "site count: $count"
+          echo "| site | peak RSS MB | panics | js_errors | screenshot |" > "$RUNNER_TEMP/phase10/matrix.md"
+          echo "|---|---|---|---|---|" >> "$RUNNER_TEMP/phase10/matrix.md"
+          PANIC_SITES=""
+          FAILED=0
+          for entry in $sites; do
+            name="${entry%%:*}"; url="${entry#*:}"
+            log="$RUNNER_TEMP/phase10/site-$name.log"
+            # setsid: own process group -> PGID-scoped sampling (phase 6.8
+            # fidelity fix; no cross-site contamination).
+            XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-$name" setsid timeout 60 \
+              ./target/production-stripped/servoshell -z -o "$RUNNER_TEMP/phase10/site-$name.png" "$url" >"$log" 2>&1 &
+            SPID=$!
+            max_rss=0
+            for i in $(seq 1 26); do
+              kill -0 $SPID 2>/dev/null || break
+              tree=0
+              for p in $(pgrep -g "$SPID"); do
+                kb=$(awk '/VmRSS/{print $2}' "/proc/$p/status" 2>/dev/null || echo 0)
+                tree=$((tree + kb))
+              done
+              [ "$tree" -gt "$max_rss" ] && max_rss=$tree
+              sleep 2
+            done
+            wait $SPID 2>/dev/null || true
+            sleep 1
+            panics=$(grep -c "panicked\|assertion failed" "$log" || true)
+            jserrs=$(grep -ciE "SecurityError|ReferenceError|TypeError:|SyntaxError" "$log" || true)
+            shot="no"; [ -s "$RUNNER_TEMP/phase10/site-$name.png" ] && shot="yes"
+            verdict="ok"
+            if [ "$panics" != "0" ]; then verdict="PANIC"; PANIC_SITES="$PANIC_SITES $name"; fi
+            [ "$shot" = "no" ] && verdict="$verdict+no-shot"
+            echo "| $name | $((max_rss / 1024)) | $panics | $jserrs | $shot |" >> "$RUNNER_TEMP/phase10/matrix.md"
+            echo "--- $name: $verdict panics=$panics js_errors=$jserrs rss=$((max_rss / 1024))MB"
+          done
+          cat "$RUNNER_TEMP/phase10/matrix.md" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ -n "$PANIC_SITES" ]; then
+            echo "::error::Engine panics on:$PANIC_SITES — RUST_BACKTRACE in site logs"
+            exit 1
+          fi
+
+      - name: Upload phase10 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: brow-phase10-evidence
+          path: |
+            ${{ runner.temp }}/phase10/matrix.md
+            ${{ runner.temp }}/phase10/site-*.log
+            ${{ runner.temp }}/phase10/site-*.png
+          retention-days: 14
