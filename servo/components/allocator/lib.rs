@@ -188,13 +188,13 @@ mod platform {
         fn set_bool(name: &CStr, value: bool) {
             let mut old: bool = false;
             let mut old_len = size_of_val(&old);
-            let new: [u8; 1] = [value as u8];
+            let mut new: [u8; 1] = [value as u8];
             let rv = unsafe {
                 mallctl(
                     name.as_ptr(),
                     (&raw mut old).cast(),
                     &mut old_len,
-                    new.as_ptr().cast(),
+                    (&raw mut new).cast(),
                     size_of_val(&new),
                 )
             };
@@ -205,13 +205,13 @@ mod platform {
         fn set_size_t(name: &CStr, value: usize) {
             let mut old: usize = 0;
             let mut old_len = size_of_val(&old);
-            let new: usize = value;
+            let mut new: usize = value;
             let rv = unsafe {
                 mallctl(
                     name.as_ptr(),
                     (&raw mut old).cast(),
                     &mut old_len,
-                    (&raw const new).cast(),
+                    (&raw mut new).cast(),
                     size_of_val(&new),
                 )
             };
