@@ -94,6 +94,7 @@ pub fn parse_line(line: &str, stats: &mut ParseStats) -> Result<Option<ParsedFil
             exclude_domains: Vec::new(),
             sitekey_present: false,
             has_unsupported_options: false,
+            hide_only: false,
             anchor: Anchor::DoubleAnchor,
             pattern: vec![PatternPiece::Literal(lowered.clone())],
             regex: None,
@@ -157,6 +158,7 @@ fn parse_network(line: &str, stats: &mut ParseStats) -> Result<Option<ParsedFilt
         exclude_domains: Vec::new(),
         sitekey_present: false,
         has_unsupported_options: false,
+        hide_only: false,
         anchor: Anchor::None,
         pattern: Vec::new(),
         regex: None,
@@ -362,12 +364,20 @@ fn apply_options(opts: &str, rule: &mut NetworkRule, stats: &mut ParseStats) -> 
                 } else if UNSUPPORTED_OPTS.contains(&name_lower.as_str()) {
                     saw_unsupported = true;
                 } else if matches!(name_lower.as_str(), "generichide" | "elemhide" | "genericblock" | "strict3p" | "inline-font" | "inline-script") {
-                    // Document-level exception flags: only meaningful for
-                    // exception rules; we keep the rule (pattern still useful
-                    // as a blocking rule) but mark partially supported.
+                    // brow (7.2): document-level page-behavior flags. They
+                    // describe what may happen ON the page (element hiding
+                    // allowed, generic blocking disabled, inline scripts
+                    // blocked) — they NEVER except an individual network
+                    // request. Exception rules carrying them are marked
+                    // hide_only so network decisions skip them (CI diag:
+                    // @@||facebook.com^$generichide whitelisted the /tr/
+                    // beacon). Blocking rules with page flags are dropped
+                    // as unreliable, as before.
                     saw_supported = true;
                     if rule.kind == FilterKind::Block {
                         saw_unsupported = true;
+                    } else {
+                        rule.hide_only = true;
                     }
                 } else {
                     // Unknown option — do not pretend to understand it.

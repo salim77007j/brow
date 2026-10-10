@@ -180,6 +180,13 @@ impl FilterEngine {
                 eprintln!("DBG applies-fail idx={idx} raw={}", rule.raw);
                 continue;
             }
+            // brow (7.2): document-level page flags ($generichide & co) on
+            // exception rules never except a network request.
+            if rule.hide_only {
+                #[cfg(feature = "brow-debug-decisions")]
+                eprintln!("DBG hide-only-skip idx={idx} raw={}", rule.raw);
+                continue;
+            }
             #[cfg(feature = "brow-debug-decisions")]
             eprintln!("DBG MATCH idx={idx} kind={:?} raw={}", rule.kind, rule.raw);
             match rule.kind {

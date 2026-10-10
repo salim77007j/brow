@@ -287,3 +287,34 @@ fn throughput_smoke() {
     );
     println!("1000 decisions in {:?} (debug build)", elapsed);
 }
+
+/// brow (7.2): document-level page flags ($generichide/$elemhide/...) on
+/// exception rules NEVER except an individual network request. CI diag
+/// evidence: @@||facebook.com^$generichide was whitelisting the
+/// facebook.com/tr/ beacon (AllowExcepted) because the engine treated the
+/// page flag as a full network exception.
+#[test]
+fn generichide_exception_never_excepts_requests() {
+    let e = FilterEngine::from_lists(
+        &["@@||facebook.com^$generichide\n||facebook.com/tr/\n"],
+    );
+    let d = e.should_block(
+        &Url::parse("https://www.example.com/").unwrap(),
+        &Url::parse("https://www.facebook.com/tr/?id=123&ev=PageView").unwrap(),
+        ResourceTypeMask::XHR,
+        true,
+    );
+    assert!(matches!(d, Decision::Block { .. }), "hide-only exception must not except a request, got {d:?}");
+
+    // a plain exception (no page flags) still excepts:
+    let e2 = FilterEngine::from_lists(
+        &["@@||facebook.com/tr/\n||facebook.com/tr/\n"],
+    );
+    let d2 = e2.should_block(
+        &Url::parse("https://www.example.com/").unwrap(),
+        &Url::parse("https://www.facebook.com/tr/?id=123&ev=PageView").unwrap(),
+        ResourceTypeMask::XHR,
+        true,
+    );
+    assert!(matches!(d2, Decision::AllowExcepted { .. }), "{d2:?}");
+}

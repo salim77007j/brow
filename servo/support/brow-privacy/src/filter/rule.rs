@@ -148,6 +148,15 @@ pub struct NetworkRule {
     pub sitekey_present: bool,
     /// True when the rule has options the engine ignores (documented drop).
     pub has_unsupported_options: bool,
+    /// brow (7.2): document-level page-behavior flags (`$generichide`,
+    /// `$elemhide`, `$genericblock`, `$strict3p`, `$inline-font`,
+    /// `$inline-script`). None of them excepts a network REQUEST —
+    /// `$generichide`/`$elemhide` scope an exception to ELEMENT HIDING
+    /// only. CI evidence: `@@||facebook.com^$generichide` was whitelisting
+    /// `facebook.com/tr/` XHR beacons. Exception rules with these flags
+    /// are skipped by network decisions; their cosmetic effect belongs to
+    /// the `#@#` plane.
+    pub hide_only: bool,
     pub anchor: Anchor,
     pub pattern: Vec<PatternPiece>,
     /// `/regex/`-delimited pattern (ABP regex rules): the raw regex source.

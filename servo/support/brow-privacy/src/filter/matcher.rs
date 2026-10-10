@@ -236,6 +236,7 @@ mod tests {
             exclude_domains: Vec::new(),
             sitekey_present: false,
             has_unsupported_options: false,
+            hide_only: false,
             anchor,
             pattern: pieces(pattern),
             regex: None,

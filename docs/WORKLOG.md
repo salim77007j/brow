@@ -1150,3 +1150,16 @@ uBlock default lists would also allow it; FB Audience Network is opt-in
 blocked). Swapped the corpus entry to www.facebook.com/tr/ which the lists
 genuinely block. All other items green: element_hiding 13677 generic
 selectors live, trackers 8/8, CNAME/CHIPS/DoH/fingerprint/session/stats OK.
+
+- **7.2(P0 engine fix)** hide_only semantics — CI diag traced the corpus
+  MISS to `@@||facebook.com^$generichide` whitelisting facebook.com/tr/
+  XHR: the engine treated document-level page flags ($generichide/
+  $elemhide/$genericblock/$strict3p/$inline-font/$inline-script) as full
+  network exceptions. Per ABP semantics they scope an exception to the
+  PAGE (element hiding/blocking behavior), never an individual request.
+  Fix: NetworkRule.hide_only flag set by the parser for exception rules
+  carrying these options; should_block skips them. Regression test
+  generichide_exception_never_excepts_requests (block + plain-exception
+  control). This fix class = real privacy hardening beyond the corpus:
+  every @@...$generihide-style rule in the embedded lists was
+  over-allowing network requests.
