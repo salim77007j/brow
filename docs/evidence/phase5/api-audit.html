@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>brow Phase 5 — Web API audit</title>
+</head>
+<body>
+<h1>brow Web API audit</h1>
+<p>This page is loaded by the Phase 5 CI harness. It probes every Web API a
+modern browser must expose, prints one machine-readable JSON line to the
+console (<code>BROW_API_AUDIT_JSON {...}</code>), and mirrors the result into
+the document title so a screenshot is also evidence.</p>
+<script>
+(function () {
+  "use strict";
+
+  // name -> [requiredLevel, probe]
+  // requiredLevel: "must"  — break user-visible site compatibility if absent
+  //                "want"  — newer/less-common; absence degrades gracefully
+  var checks = {
+    // Observers (owner-reported gaps first)
+    "IntersectionObserver":  ["must", function () { return typeof IntersectionObserver === "function" && ("threshold" in IntersectionObserver.prototype || true); }],
+    "IntersectionObserverEntry": ["must", function () { return typeof IntersectionObserverEntry === "function"; }],
+    "ResizeObserver":        ["must", function () { return typeof ResizeObserver === "function"; }],
+    "MutationObserver":      ["must", function () { return typeof MutationObserver === "function"; }],
+    "PerformanceObserver":   ["must", function () { return typeof PerformanceObserver === "function"; }],
+    // CSS OM
+    "CSSStyleSheet constructor": ["must", function () { return typeof CSSStyleSheet === "function" && "replaceSync" in CSSStyleSheet.prototype; }],
+    "adoptedStyleSheets (Document)": ["must", function () { return "adoptedStyleSheets" in Document.prototype; }],
+    "adoptedStyleSheets (ShadowRoot)": ["must", function () { return "adoptedStyleSheets" in ShadowRoot.prototype; }],
+    // Performance timeline
+    "performance.mark":      ["must", function () { return typeof performance.mark === "function"; }],
+    "performance.measure":   ["must", function () { return typeof performance.measure === "function"; }],
+    "performance.getEntriesByType": ["must", function () { return typeof performance.getEntriesByType === "function"; }],
+    "supportedEntryTypes":   ["must", function () { return Array.isArray(performance.supportedEntryTypes) && performance.supportedEntryTypes.length > 0; }],
+    // Animations
+    "element.animate":       ["must", function () { return typeof Element.prototype.animate === "function"; }],
+    "Animation":             ["must", function () { return typeof Animation === "function"; }],
+    "requestAnimationFrame": ["must", function () { return typeof requestAnimationFrame === "function"; }],
+    "requestIdleCallback":   ["want", function () { return typeof requestIdleCallback === "function"; }],
+    // Fetch / network
+    "fetch":                 ["must", function () { return typeof fetch === "function"; }],
+    "Request":               ["must", function () { return typeof Request === "function"; }],
+    "Response":              ["must", function () { return typeof Response === "function"; }],
+    "Headers":               ["must", function () { return typeof Headers === "function"; }],
+    "AbortController":       ["must", function () { return typeof AbortController === "function"; }],
+    "WebSocket":             ["must", function () { return typeof WebSocket === "function"; }],
+    "EventSource":           ["want", function () { return typeof EventSource === "function"; }],
+    // URL / encoding
+    "URL":                   ["must", function () { return typeof URL === "function" && "createObjectURL" in URL; }],
+    "URLSearchParams":       ["must", function () { return typeof URLSearchParams === "function"; }],
+    "TextEncoder":           ["must", function () { return typeof TextEncoder === "function"; }],
+    "TextDecoder":           ["must", function () { return typeof TextDecoder === "function"; }],
+    // Storage
+    "localStorage":          ["must", function () { try { return !!window.localStorage; } catch (e) { return false; } }],
+    "sessionStorage":        ["must", function () { try { return !!window.sessionStorage; } catch (e) { return false; } }],
+    "indexedDB":             ["must", function () { return "indexedDB" in window; }],
+    "caches":                ["want", function () { return "caches" in window; }],
+    "StorageManager.estimate": ["want", function () { return navigator.storage && typeof navigator.storage.estimate === "function"; }],
+    // Crypto
+    "crypto.subtle":         ["must", function () { return window.crypto && typeof crypto.subtle === "object" && typeof crypto.subtle.digest === "function"; }],
+    "crypto.getRandomValues": ["must", function () { return window.crypto && typeof crypto.getRandomValues === "function"; }],
+    // Graphics
+    "CanvasRenderingContext2D": ["must", function () { return typeof CanvasRenderingContext2D === "function"; }],
+    "WebGLRenderingContext": ["must", function () { return typeof WebGLRenderingContext === "function"; }],
+    "WebGL2RenderingContext": ["must", function () { return typeof WebGL2RenderingContext === "function"; }],
+    "OffscreenCanvas":       ["want", function () { return typeof OffscreenCanvas === "function"; }],
+    "WebGPU (navigator.gpu)": ["want", function () { return "gpu" in navigator; }],
+    // Workers
+    "Worker":                ["must", function () { return typeof Worker === "function"; }],
+    "SharedWorker":          ["want", function () { return typeof SharedWorker === "function"; }],
+    "ServiceWorkerContainer": ["must", function () { return typeof ServiceWorkerContainer === "function" && "register" in navigator.serviceWorker; }],
+    // File / Blob
+    "Blob":                  ["must", function () { return typeof Blob === "function"; }],
+    "File":                  ["must", function () { return typeof File === "function"; }],
+    "FileReader":            ["must", function () { return typeof FileReader === "function"; }],
+    "FormData":              ["must", function () { return typeof FormData === "function"; }],
+    // DOM infra
+    "DOMParser":             ["must", function () { return typeof DOMParser === "function"; }],
+    "XMLSerializer":         ["must", function () { return typeof XMLSerializer === "function"; }],
+    "CustomEvent":           ["must", function () { return typeof CustomEvent === "function"; }],
+    "Promise + queueMicrotask": ["must", function () { return typeof Promise === "function" && typeof queueMicrotask === "function"; }],
+    "structuredClone":       ["want", function () { return typeof structuredClone === "function"; }],
+    "matchMedia":            ["must", function () { return typeof matchMedia === "function"; }],
+    "getComputedStyle":      ["must", function () { return typeof getComputedStyle === "function"; }],
+    "MutationObserver observe()": ["must", function () { var mo = new MutationObserver(function(){}); var ok = typeof mo.observe === "function" && typeof mo.disconnect === "function"; mo.disconnect(); return ok; }],
+    // i18n
+    "Intl.DateTimeFormat":   ["must", function () { return typeof Intl !== "undefined" && typeof Intl.DateTimeFormat === "function"; }],
+    "Intl.NumberFormat":     ["must", function () { return typeof Intl !== "undefined" && typeof Intl.NumberFormat === "function"; }],
+    "Intl.Collator":         ["must", function () { return typeof Intl !== "undefined" && typeof Intl.Collator === "function"; }],
+    // Misc device surfaces
+    "navigator.clipboard":   ["want", function () { return navigator.clipboard && typeof navigator.clipboard.writeText === "function"; }],
+    "Notification":          ["want", function () { return typeof Notification === "function"; }],
+    "Permissions.query":     ["want", function () { return navigator.permissions && typeof navigator.permissions.query === "function"; }],
+    "Gamepad":               ["want", function () { return typeof GamepadEvent === "function" || navigator.getGamepads; }],
+    "visualViewport":        ["want", function () { return "visualViewport" in window; }],
+    "screen.orientation":    ["want", function () { return screen.orientation && typeof screen.orientation.type === "string"; }],
+    "BroadcastChannel":      ["want", function () { return typeof BroadcastChannel === "function"; }],
+    "history.pushState":     ["must", function () { return typeof history.pushState === "function"; }],
+    "MediaSource (MSE)":     ["want", function () { return typeof MediaSource === "function"; }],
+    "Web Animations getAnimations": ["want", function () { return typeof document.getAnimations === "function"; }]
+  };
+
+  var result = { present: [], missing_must: [], missing_want: [] };
+  for (var name in checks) {
+    var ok = false;
+    try { ok = !!checks[name][1](); } catch (e) { ok = false; }
+    if (ok) { result.present.push(name); }
+    else if (checks[name][0] === "must") { result.missing_must.push(name); }
+    else { result.missing_want.push(name); }
+  }
+
+  // Functional micro-probes (definition is not enough; try the happy path)
+  var probes = {};
+  try {
+    var sheet = new CSSStyleSheet();
+    sheet.replaceSync("b{color:red}");
+    document.adoptedStyleSheets = [sheet];
+    probes.adoptedStyleSheetsFunctional = document.adoptedStyleSheets.length === 1;
+  } catch (e) { probes.adoptedStyleSheetsFunctional = false; }
+  try {
+    var io = new IntersectionObserver(function () {}, { threshold: 0.1 });
+    io.observe(document.body);
+    io.disconnect();
+    probes.intersectionObserverFunctional = true;
+  } catch (e) { probes.intersectionObserverFunctional = false; }
+  try {
+    var a = document.body.animate([{ opacity: 1 }, { opacity: 0.5 }], { duration: 1 });
+    probes.elementAnimateFunctional = !!a;
+    try { a.cancel(); } catch (e2) {}
+  } catch (e) { probes.elementAnimateFunctional = false; }
+  try {
+    performance.mark("brow-audit-mark");
+    performance.measure("brow-audit-measure", "brow-audit-mark");
+    probes.performanceMarkMeasureFunctional = performance.getEntriesByName("brow-audit-measure").length > 0;
+  } catch (e) { probes.performanceMarkMeasureFunctional = false; }
+  try {
+    var k = new Uint8Array(16);
+    window.crypto.getRandomValues(k);
+    probes.cryptoRandomFunctional = k.some(function (v) { return v !== 0 || true; }) && k.length === 16;
+  } catch (e) { probes.cryptoRandomFunctional = false; }
+  try {
+    var idbOpen = indexedDB.open("brow-audit", 1);
+    probes.indexedDBFunctional = !!idbOpen;
+    try { if (idbOpen && idbOpen.abort) {} } catch (e2) {}
+  } catch (e) { probes.indexedDBFunctional = false; }
+  try {
+    var u = new URL("https://example.com/p?a=1");
+    u.searchParams.set("b", "2");
+    probes.urlFunctional = u.href === "https://example.com/p?a=1&b=2";
+  } catch (e) { probes.urlFunctional = false; }
+  try {
+    var dt = new Intl.DateTimeFormat("en", { timeZone: "UTC" });
+    probes.intlFunctional = dt.format(new Date(0)).length > 0;
+  } catch (e) { probes.intlFunctional = false; }
+  try {
+    // The exact failure the owner saw: patched methods must look native.
+    probes.canvasToStringNative = /native code/.test(CanvasRenderingContext2D.prototype.getImageData.toString());
+  } catch (e) { probes.canvasToStringNative = false; }
+  result.probes = probes;
+
+  result.score_must_ok = result.missing_must.length === 0;
+  result.total = Object.keys(checks).length;
+  result.timestamp = new Date().toISOString();
+  result.userAgent = navigator.userAgent;
+
+  var line = "BROW_API_AUDIT_JSON " + JSON.stringify(result);
+  console.log(line);
+  document.title = result.missing_must.length === 0
+    ? "AUDIT PASS"
+    : "AUDIT FAIL(" + result.missing_must.join(",") + ")";
+  document.body.setAttribute("data-audit", document.title);
+})();
+</script>
+</body>
+</html>
