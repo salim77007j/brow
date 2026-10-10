@@ -170,12 +170,17 @@ impl PrivacyState {
                     );
                     return Some(engine);
                 }
-                // brow (phase7.1): file-based lists (pref / exe-relative
-                // updates, typically EasyList-only) are ADDITIVE with the
-                // embedded EasyPrivacy snapshot so the tracker half of the
-                // stack can never be dropped by a list refresh.
+                // brow (phase7.1 + 7.4): file-based lists (pref /
+                // exe-relative updates, typically EasyList-only) are
+                // ADDITIVE with the embedded tracker halves (EasyPrivacy +
+                // uBlock filters + Peter Lowe's) so the tracker half of
+                // the stack can never be dropped by a list refresh.
                 match brow_privacy::lists::engine_with_builtins(
-                    &[EMBEDDED_PRIVACY_LIST],
+                    &[
+                        EMBEDDED_PRIVACY_LIST,
+                        brow_privacy::lists::EMBEDDED_UBLOCK_FILTERS,
+                        brow_privacy::lists::EMBEDDED_PETER_LOWES,
+                    ],
                     &existing,
                 ) {
                     Ok(engine) => {

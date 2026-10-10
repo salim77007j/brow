@@ -39,6 +39,21 @@ pub mod lists {
     /// phase 7.1). Same single-copy rationale.
     pub const EMBEDDED_EASYPRIVACY: &str = include_str!("../assets/easyprivacy-snapshot.txt");
 
+    /// brow (7.4): uBlock filters (uAssets) — the uBlock Origin core
+    /// filter set: anti-adblock circumvention, popup blocking, uBlock-
+    /// specific rules that EasyList lacks. uBlock-specific extended
+    /// syntax (scriptlets `##+js()`, procedural `#?#`) that the parser
+    /// cannot apply is skipped as recorded-invalid — the valid subset
+    /// (network + plain CSS) loads. GPL-3.0 (uAssets); list content is
+    /// public data.
+    pub const EMBEDDED_UBLOCK_FILTERS: &str = include_str!("../assets/ufilter-snapshot.txt");
+
+    /// brow (7.4): Peter Lowe's ad-server domain list — compact
+    /// high-signal domain blocklist (~7k domains), complements EasyList's
+    /// pattern rules with plain domain blocks. Attribution requested by
+    /// the author (see snapshot header + assets/ licences docs).
+    pub const EMBEDDED_PETER_LOWES: &str = include_str!("../assets/plower-snapshot.txt");
+
     /// brow (7.3): process-global engine over the embedded snapshots.
     /// One instance per process, shared by the net stack (network
     /// decisions) and the script thread (cosmetic element hiding) —
@@ -52,11 +67,16 @@ pub mod lists {
     pub fn global_engine() -> Option<&'static FilterEngine> {
         // `from_lists` is infallible (parse failures become recorded stats,
         // not errors) — the Option models a future failure mode only.
+        // brow (7.4): the full uBlock-class stack — EasyList (ads) +
+        // EasyPrivacy (trackers) + uBlock filters (circumvention/popups)
+        // + Peter Lowe's (domain blocks).
         GLOBAL_ENGINE
             .get_or_init(|| {
                 Some(FilterEngine::from_lists(&[
                     EMBEDDED_EASYLIST,
                     EMBEDDED_EASYPRIVACY,
+                    EMBEDDED_UBLOCK_FILTERS,
+                    EMBEDDED_PETER_LOWES,
                 ]))
             })
             .as_ref()

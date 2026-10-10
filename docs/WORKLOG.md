@@ -1114,3 +1114,14 @@ feeds the honest floor assessment for the <100 MB/tab target.
   * Embedded list consts moved to brow-privacy (single binary copy).
   * Tests: generic_unhide_cancels_generic_hide,
     site_scoped_excludes_generics + existing suite.
+
+- **7.4** uBlock-class stack completed: uAssets "uBlock filters" (10.9k
+  lines — anti-adblock circumvention, popups, uBlock-specific rules)
+  + Peter Lowe's ad servers (7.1k domain blocks) embedded next to
+  EasyList+EasyPrivacy. global_engine() and the net additive path load
+  all four; uBlock-specific extended syntax (##+js scriptlets,
+  procedural) skips as recorded-invalid (from_lists tolerance verified
+  in source). Snapshot provenance + license headers in assets/.
+  NOTE: byte-level tool-read mangling ([h sequences) produced a false
+  "corrupted test file" alarm — od -c showed the file was always valid;
+  CI's green privacy job was correct. Use od for byte truth.
