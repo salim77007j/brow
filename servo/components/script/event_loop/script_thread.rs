@@ -248,8 +248,10 @@ impl ScriptThreadUserContents {
         if pref!(network_privacy_cosmetic_filter_enabled) {
             let css = brow_privacy::lists::generic_cosmetic_css();
             if !css.is_empty() {
-                let url = ServoUrl::parse("brow:cosmetic-generic-user-stylesheet")
-                    .unwrap_or_else(|_| ServoUrl::parse("about:blank").unwrap());
+                // UrlExtraData: From<url::Url> — parse directly with the
+                // plain url crate (ServoUrl does not implement it).
+                let url = url::Url::parse("brow:cosmetic-generic-user-stylesheet")
+                    .unwrap_or_else(|_| url::Url::parse("about:blank").unwrap());
                 user_stylesheets.push(DocumentStyleSheet(ServoArc::new(Stylesheet::from_str(
                     &css,
                     url.into(),
