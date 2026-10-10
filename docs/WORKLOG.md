@@ -1030,3 +1030,30 @@ Root causes researched in source, fixed in order:
 
 Registers: D-018 recorded; R-19 (int32, page-authored string — engine
 class mitigated), R-20 (immature APIs now exposed, CI-gated) OPEN.
+
+**Run #88 (a55d3886e) — ALL 7 JOBS GREEN. Phase 5 iteration 1 evidence:**
+- API audit: **63/67 present, missing_must NONE**; probes ALL true —
+  adoptedStyleSheets, IntersectionObserver, element.animate,
+  performance.mark/measure, requestIdleCallback (new), crypto.getRandomValues,
+  indexedDB.open, URL/URLSearchParams, Intl, canvasToStringNative
+  (fingerprint-defense toString spoof verified on CI).
+  missing_want (documented): WebGPU (D-018), screen.orientation, MSE
+  (R-17), document.getAnimations.
+- Site matrix — 12 real sites, **0 panics, 0 JS console errors on every
+  site**: example 483MB / wikipedia 540 / github 1188 (SW+WebGL2 active,
+  no crash) / duckduckgo 641 / bing 655 / stackoverflow 449 / mdn 524 /
+  reddit 490 / hackernews 464 / bbc 769 / w3schools 380 / xkcd 508.
+  Screenshots 10/12 (bbc, w3schools slow-load timeout — evidence logs
+  kept). RSS is software-GL CI data, not owner-GPU comparable (Phase 6
+  input, not a verdict).
+- Artifacts: brow-servo-windows-x86_64 148.3 MB,
+  brow-servo-linux-x86_64 44.7 MB, brow-phase5-evidence 2.3 MB
+  (audit JSON + matrix + per-site logs + screenshots).
+- The harness caught two real findings during bring-up: its own probe
+  bug (supportedEntryTypes is a PerformanceObserver static — fixed) and
+  zero engine panics/missing must-APIs — the gate is honest in both
+  directions.
+
+**Next**: Phase 6 memory work (CI RSS baseline captured), Phase 7 score
+rubric + more filter lists, 50-site matrix expansion, ASan/TSan (P9),
+P10 final report.
