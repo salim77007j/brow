@@ -4,7 +4,8 @@
 
 use script_bindings::root::DomRoot;
 
-use crate::dom::html::htmlheadelement::HTMLHeadElement;
+use crate::dom::document::Document;
+use crate::dom::html::document_structure::htmlheadelement::HTMLHeadElement;
 use crate::dom::node::NodeTraits;
 use crate::dom::window::Window;
 use crate::realms::enter_auto_realm;
@@ -64,9 +65,33 @@ pub(crate) fn load_script(head: &HTMLHeadElement) {
     if builtin.is_empty() && userscripts.is_empty() {
         return;
     }
+    // brow (phase5.3): remember WHICH document the userscripts were queued
+    // for. The delayed task runs after parsing completes, but a navigation
+    // may have replaced this document in the browsing context by then
+    // (iframe about:blank swap, site redirects). Owner-hardware evidence:
+    // `assertion failed: self.can_run_script()` (globalscope.rs) — the
+    // script-thread panic that shows up as "page crashed" — and
+    // `SecurityError: Location's relevant Document is not same
+    // origin-domain` from the payload's `location.origin` read. Both are
+    // this one race: evaluate against a window whose ACTIVE document is
+    // dead or belongs to another origin.
+    let queued_doc = DomRoot::from_ref(&*doc);
     let win = DomRoot::from_ref(doc.window());
-    doc.add_delayed_task(task!(UserScriptExecute: |cx, win: DomRoot<Window>| {
+    doc.add_delayed_task(task!(UserScriptExecute: move |cx, win: DomRoot<Window>| {
+        // brow (phase5.3): "check if we can run script" (HTML spec §8.1.5).
+        // The spec REQUIRES this gate before evaluating; upstream's
+        // `assert!(can_run_script())` inside `evaluate_js_on_global`
+        // assumes every caller ran it. Skip when the document was replaced
+        // (identity mismatch — its replacement gets its own userscript run)
+        // or when it is not fully active / scripting is sandboxed.
+        let same_document = std::ptr::eq::<Document>(&*win.Document(), &*queued_doc);
+        if !same_document {
+            return;
+        }
         let global_scope = win.as_global_scope();
+        if !global_scope.can_run_script() {
+            return;
+        }
         let mut realm = enter_auto_realm(cx, global_scope);
         let cx = &mut realm.current_realm();
 
