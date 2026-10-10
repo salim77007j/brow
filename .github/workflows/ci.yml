@@ -107,6 +107,9 @@ jobs:
       - name: Unit + integration tests (real EasyList snapshot, cross-module flows)
         run: cargo test -p brow-privacy --locked || cargo test -p brow-privacy
 
+      - name: brow 7.2 diag — engine decision path for corpus misses
+        run: cargo test -p brow-privacy --features brow-debug-decisions --test matcher_diag -- --nocapture 2>&1 | grep -E "DIAG|DBG (MATCH|verify-fail|applies-fail)" | head -40 || true
+
       - name: brow 7.8 — privacy score gate (rubric, >= 90/100)
         run: |
           set -o pipefail
