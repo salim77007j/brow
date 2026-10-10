@@ -58,6 +58,12 @@ struct CosmeticSelector {
 #[derive(Debug)]
 pub struct CosmeticEngine {
     generic_hide: Vec<String>,
+    /// brow (7.3): generic `#@#` exceptions (no domain part). The parser
+    /// routes them to `DomainUnhide { include: [] }`, which used to be
+    /// unreachable by `site_result` (no bucket to file them under) — a
+    /// generic exception could never cancel a generic hide. They now live
+    /// here and are subtracted by `generic_effective`.
+    generic_unhide: Vec<String>,
     /// domain entry (or entity `example.*`) -> bucket of rule ids
     by_domain: HashMap<String, DomainBucket>,
     /// entity-style keys (with `.*`) for wildcard-TLD matching
@@ -69,6 +75,7 @@ pub struct CosmeticEngine {
 impl CosmeticEngine {
     pub fn new(rules: Vec<CosmeticRule>) -> CosmeticEngine {
         let mut generic_hide = Vec::new();
+        let mut generic_unhide: Vec<String> = Vec::new();
         let mut selectors: Vec<CosmeticSelector> = Vec::new();
         let mut by_domain: HashMap<String, DomainBucket> = HashMap::new();
         let mut entity_keys: Vec<String> = Vec::new();
@@ -79,6 +86,15 @@ impl CosmeticEngine {
             match rule {
                 CosmeticRule::GenericHide { selector, .. } => {
                     generic_hide.push(selector);
+                }
+                CosmeticRule::DomainUnhide {
+                    include,
+                    selector,
+                    ..
+                } if include.is_empty() => {
+                    // brow (7.3): generic `#@#` — no domain to bucket under;
+                    // cancels generic hides globally (see generic_unhide).
+                    generic_unhide.push(selector);
                 }
                 CosmeticRule::DomainHide {
                     include,
@@ -119,6 +135,7 @@ impl CosmeticEngine {
 
         CosmeticEngine {
             generic_hide,
+            generic_unhide,
             by_domain,
             entity_keys,
             selectors,
@@ -190,6 +207,57 @@ impl CosmeticEngine {
     pub fn domain_rule_count(&self) -> usize {
         self.selectors.len()
     }
+
+    /// brow (7.3): the generic element-hiding plane — selectors that apply
+    /// on EVERY site, minus generic exceptions. Ships once as a global user
+    /// stylesheet (parsed once, Origin::User, shared by every document via
+    /// ScriptThreadUserContents); NOT repeated per document.
+    pub fn generic_effective(&self) -> Vec<String> {
+        let un: std::collections::BTreeSet<&str> =
+            self.generic_unhide.iter().map(|s| s.as_str()).collect();
+        let mut out: Vec<String> = self
+            .generic_hide
+            .iter()
+            .filter(|s| !un.contains(&s.as_str()))
+            .cloned()
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    /// brow (7.3): the domain-scoped plane ONLY — generic hides excluded
+    /// (they ship as the global user stylesheet; re-injecting them per
+    /// document would duplicate the CSS). Applied per document by the
+    /// engine at head-bind time.
+    pub fn site_scoped_result(&self, site_host: &str) -> CosmeticResult {
+        let mut hide: BTreeMap<String, ()> = BTreeMap::new();
+        let mut unhide: BTreeMap<String, ()> = BTreeMap::new();
+
+        // Candidate buckets: every label suffix of the site host
+        // (www.foo.com -> www.foo.com, foo.com, com).
+        let labels: Vec<&str> = site_host.split('.').collect();
+        for i in 0..labels.len() {
+            let candidate = labels[i..].join(".");
+            if let Some(bucket) = self.by_domain.get(&candidate) {
+                self.apply_bucket(site_host, bucket, &mut hide, &mut unhide);
+            }
+        }
+        // Entity keys (`example.*`).
+        for key in &self.entity_keys {
+            if super::domain_matches(site_host, key) {
+                if let Some(bucket) = self.by_domain.get(key) {
+                    self.apply_bucket(site_host, bucket, &mut hide, &mut unhide);
+                }
+            }
+        }
+
+        CosmeticResult {
+            hide: hide.into_keys().collect(),
+            unhide: unhide.into_keys().collect(),
+            procedural_skipped: self.procedural_count,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -255,5 +323,31 @@ mod tests {
         let e = CosmeticEngine::new(rules);
         assert!(e.site_result("www.foo.com").effective().contains(&".scoped".to_string()));
         assert!(!e.site_result("bar.foo.com").effective().contains(&".scoped".to_string()));
+    }
+
+    #[test]
+    fn generic_unhide_cancels_generic_hide() {
+        // brow (7.3): generic #@# used to be silently dropped (empty
+        // include never bucketed) — the exception could never cancel.
+        let (rules, _) = engine(&["##.ad", "#@#.ad", "##.banner"]);
+        let e = CosmeticEngine::new(rules);
+        let gen = e.generic_effective();
+        assert!(gen.contains(&".banner".to_string()));
+        assert!(!gen.contains(&".ad".to_string()));
+    }
+
+    #[test]
+    fn site_scoped_excludes_generics() {
+        let (rules, _) = engine(&["##.ad", "foo.com##.promo", "foo.com#@#.promo"]);
+        let e = CosmeticEngine::new(rules);
+        // site_scoped_result: only the domain plane.
+        let r = e.site_scoped_result("www.foo.com");
+        assert!(!r.hide.contains(&".ad".to_string()));
+        assert!(r.hide.contains(&".promo".to_string()));
+        assert!(r.unhide.contains(&".promo".to_string()));
+        assert!(r.effective().is_empty());
+        // site_result (full, unchanged semantics) still includes generics.
+        let full = e.site_result("www.foo.com");
+        assert!(full.hide.contains(&".ad".to_string()));
     }
 }

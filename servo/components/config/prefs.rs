@@ -389,6 +389,13 @@ pub struct Preferences {
     /// brow (phase 4): master switch for the network ad/tracker filter
     /// (EasyList/ABP syntax lists, evaluated by brow-privacy).
     pub network_privacy_filter_enabled: bool,
+    /// brow (phase 7.3): cosmetic (element-hiding) filter — injects the
+    /// filter lists' `##` selectors as `display:none!important` CSS:
+    /// generic rules once as a global user stylesheet, domain-scoped rules
+    /// per document at head-bind (pre-paint, no ad flash). Independent of
+    /// `network_privacy_filter_enabled` (request blocking vs element
+    /// hiding can be toggled separately).
+    pub network_privacy_cosmetic_filter_enabled: bool,
     /// brow (phase 4): filesystem path to the filter list. Empty means the
     /// default `resources/easylist.txt` location (list may be absent —
     /// filtering then stays inactive while CNAME/CHIPS remain active).
@@ -680,6 +687,10 @@ impl Preferences {
             network_http_cache_size: 2000,
             network_local_directory_listing_enabled: true,
             network_privacy_filter_enabled: true,
+            // brow (7.3): element hiding ships on — it is half the uBlock-
+            // class stack (request blocking hides trackers' requests, but
+            // leftover ad iframes/placeholders stay visible without it).
+            network_privacy_cosmetic_filter_enabled: true,
             network_privacy_filter_list_path: String::new(),
             network_privacy_cname_detection_enabled: true,
             network_privacy_chips_require_secure_partitioned: true,

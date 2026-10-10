@@ -58,6 +58,6 @@ impl VirtualMethods for HTMLHeadElement {
         if let Some(s) = self.super_type() {
             s.bind_to_tree(cx, context);
         }
-        load_script(self);
+        load_script(cx, self);
     }
 }

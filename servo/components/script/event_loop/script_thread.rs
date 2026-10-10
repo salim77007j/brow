@@ -221,7 +221,7 @@ struct ScriptThreadUserContents {
 
 impl ScriptThreadUserContents {
     fn new(user_contents: UserContents, shared_locks: &SharedRwLocks) -> Self {
-        let user_stylesheets = user_contents
+        let mut user_stylesheets: Vec<DocumentStyleSheet> = user_contents
             .stylesheets
             .iter()
             .map(|user_stylesheet| {
@@ -238,6 +238,36 @@ impl ScriptThreadUserContents {
                 )))
             })
             .collect();
+        // brow (7.3): the GENERIC element-hiding plane ships once as a
+        // user-origin stylesheet — parsed once here, shared by every
+        // document of this thread via the Rc below. With !important, user
+        // origin wins the cascade over author styles (CSS cascade order).
+        // The DOMAIN-SCOPED plane injects per document at head-bind
+        // (dom::userscripts::inject_cosmetic_style) — see there for why
+        // the split (no per-page duplication of the generic sheet).
+        if pref!(network_privacy_cosmetic_filter_enabled) {
+            let css = brow_privacy::lists::generic_cosmetic_css();
+            if !css.is_empty() {
+                let url = ServoUrl::parse("brow:cosmetic-generic-user-stylesheet")
+                    .unwrap_or_else(|_| ServoUrl::parse("about:blank").unwrap());
+                user_stylesheets.push(DocumentStyleSheet(ServoArc::new(Stylesheet::from_str(
+                    &css,
+                    url.into(),
+                    Origin::User,
+                    ServoArc::new(shared_locks.ua_or_user.wrap(MediaList::empty())),
+                    shared_locks.ua_or_user.clone(),
+                    None,
+                    Some(&RustLogReporter),
+                    QuirksMode::NoQuirks,
+                    AllowImportRules::Yes,
+                ))));
+                log::info!(
+                    "brow privacy: generic cosmetic stylesheet active ({} bytes)"
+                    ,
+                    css.len()
+                );
+            }
+        }
         Self {
             user_scripts: Rc::new(user_contents.scripts),
             user_stylesheets: Rc::new(user_stylesheets),

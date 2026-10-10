@@ -502,3 +502,25 @@ indefinitely at browser steady state.
 report (6.9). The <100 MB/tab target stays subject to honest floor
 assessment (R-06); the 5-tab steady-state number is the renegotiation
 input. Image-cache byte budget (6.3) decides on these numbers.
+
+## D-020 — Cosmetic filtering: two-plane architecture (phase 7.3)
+
+**Decision** (2026-10-10, phase 7): element hiding splits the filter
+lists' `##` rules into (1) a GENERIC plane shipped once per script
+thread as a user-origin stylesheet (parsed once, Rc-shared, wins the
+!important cascade) and (2) a DOMAIN-SCOPED plane injected per document
+at head bind-to-tree — before body parse (pre-paint, no ad flash).
+One rule engine per content process (brow-privacy global_engine shared
+net+script). Per-rule CSS assembly (selector{display:none!important}
+one per line) so a bad selector can only kill its own rule.
+
+**Why**: the CosmeticEngine existed but nothing consumed it (element
+hiding never ran — the "ad blocker works but page still shows ad
+placeholders" class). Injecting everything per page would duplicate
+~13.6k generic selectors per document; a single global sheet cannot
+express per-site scoping.
+
+**Consequence**: domain-scoped CSS arrives at head-bind (pre-paint);
+a stylesheet ~600 KB (generics) is parsed once per thread, not per page.
+If a site breaks under element hiding, the single pref
+network_privacy_cosmetic_filter_enabled is the kill switch.

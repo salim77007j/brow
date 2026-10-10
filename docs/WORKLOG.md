@@ -1090,3 +1090,27 @@ upstream-scale), background-tab freeze ALREADY shipped phase 3.
 
 **Next**: CI run on this push decides 6.3 (image-cache byte budget) and
 feeds the honest floor assessment for the <100 MB/tab target.
+
+- **7.3** cosmetic (element-hiding) filter WIRED — the engine existed
+  (CosmeticEngine, parse-time selector sanity checks) but had ZERO
+  consumers: element hiding never ran. Two-plane architecture:
+  * GENERIC plane (~13.6k selectors): one global user stylesheet,
+    parsed ONCE per script thread (ScriptThreadUserContents), Origin::User
+    (!important wins the cascade over author styles), shared by every
+    document via Rc — no per-page duplication.
+  * DOMAIN-SCOPED plane (~10k rules): per-document <style> injected
+    synchronously at head bind-to-tree (userscripts.rs) — BEFORE body
+    parse, ads hidden pre-paint, no flash. Per-document host scoping
+    means iframes get their own site's rules naturally.
+  * Engine fixes: generic `#@#` exceptions were silently dropped
+    (empty include never bucketed) — now collected in generic_unhide and
+    subtracted by generic_effective(); new site_scoped_result() excludes
+    generics (no double-injection).
+  * Net migration: PrivacyState now shares the process-global embedded
+    engine (brow-privacy lists::global_engine) — ONE rule engine per
+    content process instead of two (phase 6 memory); file-list override
+    path Box::leaks its engine (process-lifetime state, documented).
+  * New pref network_privacy_cosmetic_filter_enabled (default ON).
+  * Embedded list consts moved to brow-privacy (single binary copy).
+  * Tests: generic_unhide_cancels_generic_hide,
+    site_scoped_excludes_generics + existing suite.

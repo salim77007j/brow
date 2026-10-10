@@ -31,6 +31,71 @@ pub mod lists {
     use crate::filter::FilterEngine;
     use std::path::Path;
 
+    /// brow (7.3): the embedded EasyList snapshot, owned here so every
+    /// consumer (net stack, script thread, shell) shares ONE binary string.
+    pub const EMBEDDED_EASYLIST: &str = include_str!("../assets/easylist-snapshot.txt");
+
+    /// brow (7.3): the embedded EasyPrivacy snapshot (tracker half —
+    /// phase 7.1). Same single-copy rationale.
+    pub const EMBEDDED_EASYPRIVACY: &str = include_str!("../assets/easyprivacy-snapshot.txt");
+
+    /// brow (7.3): process-global engine over the embedded snapshots.
+    /// One instance per process, shared by the net stack (network
+    /// decisions) and the script thread (cosmetic element hiding) —
+    /// without this, the cosmetic wiring would build a second engine
+    /// per content process and double the rule memory (phase 6).
+    ///
+    /// `None` = the embedded text failed to parse (unreachable in
+    /// practice; logged at build of the lock).
+    static GLOBAL_ENGINE: std::sync::OnceLock<Option<FilterEngine>> = std::sync::OnceLock::new();
+
+    pub fn global_engine() -> Option<&'static FilterEngine> {
+        // `from_lists` is infallible (parse failures become recorded stats,
+        // not errors) — the Option models a future failure mode only.
+        GLOBAL_ENGINE
+            .get_or_init(|| {
+                Some(FilterEngine::from_lists(&[
+                    EMBEDDED_EASYLIST,
+                    EMBEDDED_EASYPRIVACY,
+                ]))
+            })
+            .as_ref()
+    }
+
+    /// brow (7.3): the generic element-hiding plane as a CSS stylesheet
+    /// body — one `display:none!important` rule per selector (per-rule
+    /// isolation: a future bad parse can only kill its own rule, never
+    /// the whole sheet). Empty when the engine is unavailable.
+    pub fn generic_cosmetic_css() -> String {
+        let Some(engine) = global_engine() else {
+            return String::new();
+        };
+        let selectors = engine.cosmetic().generic_effective();
+        let mut css = String::with_capacity(selectors.len() * 48);
+        for sel in selectors {
+            css.push_str(&sel);
+            css.push_str("{display:none!important}\n");
+        }
+        css
+    }
+
+    /// brow (7.3): the domain-scoped element-hiding plane for one site
+    /// host (lowercase), as a CSS body (same per-rule assembly). Empty
+    /// when the engine is unavailable or nothing is scoped to the host.
+    pub fn site_cosmetic_css(site_host: &str) -> String {
+        let Some(engine) = global_engine() else {
+            return String::new();
+        };
+        let result = engine.cosmetic().site_scoped_result(site_host);
+        let selectors = result.effective();
+        let mut css = String::with_capacity(selectors.len() * 48);
+        for sel in selectors {
+            css.push_str(&sel);
+            css.push_str("{display:none!important}\n");
+        }
+        css
+    }
+
     /// Build an engine from a list of files (UTF-8 filter lists).
     pub fn engine_from_files(paths: &[&Path]) -> std::io::Result<FilterEngine> {
         let mut texts = Vec::with_capacity(paths.len());

@@ -36,22 +36,25 @@ use brow_privacy::stats::PrivacyStats;
 /// embedded snapshot (~80k EasyList rules) the engine can no longer no-op
 /// in any packaging mode; file-based lists (pref or exe-relative) take
 /// precedence so updates still work.
-const EMBEDDED_FILTER_LIST: &str =
-    include_str!("../../support/brow-privacy/assets/easylist-snapshot.txt");
-// brow (phase7.1): EasyPrivacy ships alongside EasyList — EasyList is the
-// ad half of the uBlock-style stack, EasyPrivacy is the tracker half
-// (analytics beacons, session-replay, fingerprinting endpoints). Without
-// it the engine "blocks ads" but counts trackers, which is exactly the
-// owner's "ad blocker works but rated poorly" report. Same ABP syntax,
-// same parser.
-const EMBEDDED_PRIVACY_LIST: &str =
-    include_str!("../../support/brow-privacy/assets/easyprivacy-snapshot.txt");
+// brow (v0.6.1, fix 3.1 + 7.3): the embedded snapshots now live in
+// brow-privacy (`lists::EMBEDDED_EASYLIST` / `EMBEDDED_EASYPRIVACY`) so the
+// net stack, the script thread and the shell share ONE copy per process.
+// This module references the EasyPrivacy snapshot directly: file-based
+// lists (pref / exe-relative updates, typically EasyList-only) are ADDITIVE
+// with embedded EasyPrivacy so the tracker half of the stack can never be
+// dropped by a list refresh; the no-file fallback path uses the shared
+// process-global engine (EasyList + EasyPrivacy).
+const EMBEDDED_PRIVACY_LIST: &str = brow_privacy::lists::EMBEDDED_EASYPRIVACY;
 
 pub struct PrivacyState {
     /// Filter engine, built lazily from the configured list; `None` when
     /// the filter is disabled (the embedded fallback makes "no list found"
-    /// impossible in release builds).
-    engine: OnceLock<Option<FilterEngine>>,
+    /// impossible in release builds). brow (7.3): `&'static` — the embedded
+    /// path shares the process-global engine in brow-privacy; the file-list
+    /// path leaks its engine (filter engines are process-lifetime state,
+    /// they are never torn down in practice — the leak is intentional and
+    /// bounded to at most one engine).
+    engine: OnceLock<Option<&'static brow_privacy::filter::FilterEngine>>,
     /// Dedicated DoH resolver for CNAME-chain inspection (same config as
     /// the fetch resolver).
     resolver: brow_net_core::dns::DohResolver,
@@ -154,28 +157,18 @@ impl PrivacyState {
                     .map(|p| p.as_path())
                     .collect();
                 if existing.is_empty() {
-                    match brow_privacy::lists::engine_with_builtins(
-                        &[EMBEDDED_FILTER_LIST, EMBEDDED_PRIVACY_LIST],
-                        &[],
-                    ) {
-                        Ok(engine) => {
-                            log::info!(
-                                "brow privacy: no filter list file found at {paths:?}; \
-                                 using embedded EasyList+EasyPrivacy snapshots ({} network rules)",
-                                engine.network_rule_count()
-                            );
-                            return Some(engine);
-                        },
-                        Err(err) => {
-                            // Unreachable in practice (embedded text is valid);
-                            // surface loudly instead of the v0.6.0 silent INFO.
-                            log::warn!(
-                                "brow privacy: embedded filter list failed to parse: {err}; \
-                                 network filtering INACTIVE (CNAME/CHIPS still active)"
-                            );
-                            return None;
-                        },
-                    }
+                    // brow (7.3): the process-global embedded engine —
+                    // shared with the script thread's cosmetic wiring so
+                    // the standard build holds ONE rule engine per content
+                    // process, not two.
+                    let engine = brow_privacy::lists::global_engine()
+                        .expect("embedded filter list parse cannot fail (from_lists infallible)");
+                    log::info!(
+                        "brow privacy: no filter list file found at {paths:?}; \
+                         using process-global embedded EasyList+EasyPrivacy engine ({} network rules)",
+                        engine.network_rule_count()
+                    );
+                    return Some(engine);
                 }
                 // brow (phase7.1): file-based lists (pref / exe-relative
                 // updates, typically EasyList-only) are ADDITIVE with the
@@ -191,7 +184,9 @@ impl PrivacyState {
                              (files + embedded EasyPrivacy)",
                             engine.network_rule_count()
                         );
-                        Some(engine)
+                        // brow (7.3): process-lifetime state — see the field
+                        // doc for why the leak is intentional.
+                        Some(Box::leak(Box::new(engine)) as &brow_privacy::filter::FilterEngine)
                     },
                     Err(err) => {
                         log::warn!("brow privacy: failed to load list: {err}");

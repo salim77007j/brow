@@ -4,8 +4,13 @@
 
 use script_bindings::root::DomRoot;
 
+use crate::dom::bindings::codegen::Bindings::DocumentBinding::DocumentMethods;
+use crate::dom::bindings::codegen::Bindings::NodeBinding::NodeMethods;
+use crate::dom::bindings::codegen::UnionTypes::StringOrElementCreationOptions;
+use crate::dom::bindings::inheritance::Castable;
+use crate::dom::bindings::str::DOMString;
 use crate::dom::html::document_structure::htmlheadelement::HTMLHeadElement;
-use crate::dom::node::NodeTraits;
+use crate::dom::node::{Node, NodeTraits};
 use crate::dom::window::Window;
 use crate::realms::enter_auto_realm;
 
@@ -56,7 +61,12 @@ fn builtin_fingerprint_defense() -> String {
     guard.entry(level).or_insert_with(|| payload.script).clone()
 }
 
-pub(crate) fn load_script(head: &HTMLHeadElement) {
+pub(crate) fn load_script(cx: &mut js::context::JSContext, head: &HTMLHeadElement) {
+    // brow (7.3): cosmetic element hiding FIRST — synchronous, at head
+    // bind-to-tree, i.e. before the parser produces any body content. Ads
+    // matching a filter rule are hidden before first paint: no flash.
+    inject_cosmetic_style(cx, head);
+
     let doc = head.owner_document();
     // brow (v0.6.1): builtin defense first, then shell userscripts.
     let builtin = builtin_fingerprint_defense();
@@ -112,4 +122,59 @@ pub(crate) fn load_script(head: &HTMLHeadElement) {
             );
         }
     }));
+}
+
+/// brow (7.3): the per-document cosmetic element hiding — the DOMAIN-SCOPED
+/// plane of the filter engine (`site_scoped_result`). The generic plane
+/// ships once as a global user stylesheet (Origin::User, shared by every
+/// document — see servoshell App::init); re-injecting it per document would
+/// duplicate hundreds of KB of CSS per page.
+///
+/// Applied synchronously at head bind-to-tree (before any body content is
+/// parsed): selectors matching this document's host get `display:none
+/// !important` before first paint — ads never flash.
+///
+/// Pref: `network_privacy_cosmetic_filter_enabled` (default on; the single
+/// off switch, mirroring the network filter's own pref).
+///
+/// Safety: the selectors were sanity-checked at list parse time
+/// (`selector_is_sane`) — a hostile list cannot inject CSS beyond
+/// element-hiding selectors; the payload is plain CSS text in a <style>
+/// element, never evaluated as script.
+fn inject_cosmetic_style(cx: &mut js::context::JSContext, head: &HTMLHeadElement) {
+    if !servo_config::pref!(network_privacy_cosmetic_filter_enabled) {
+        return;
+    }
+    let doc = head.owner_document();
+    // about:blank / opaque-origin documents: no host, nothing scoped.
+    let Some(host) = doc.url().host_str().map(str::to_owned) else {
+        return;
+    };
+    let css = brow_privacy::lists::site_cosmetic_css(&host);
+    if css.is_empty() {
+        return;
+    }
+    let Ok(style_elem) = doc.CreateElement(
+        cx,
+        DOMString::from("style"),
+        StringOrElementCreationOptions::String(DOMString::new()),
+    ) else {
+        return;
+    };
+    let text = doc.CreateTextNode(cx, DOMString::from(css));
+    if style_elem
+        .upcast::<Node>()
+        .AppendChild(cx, text.upcast::<Node>())
+        .is_err()
+    {
+        return;
+    }
+    if head
+        .upcast::<Node>()
+        .AppendChild(cx, style_elem.upcast::<Node>())
+        .is_err()
+    {
+        return;
+    }
+    log::debug!("brow privacy: cosmetic stylesheet injected for {host}");
 }
