@@ -90,9 +90,14 @@ fn privacy_score_at_least_90() {
         ("https://criteo.com/delivery/ajs.php", ResourceTypeMask::SCRIPT),
         ("https://www.facebook.com/tr/?id=123456789&ev=PageView", ResourceTypeMask::XHR),
     ];
-    let ads_ok = ads
+    let ads_results: Vec<String> = ads
         .iter()
-        .all(|(u, b)| blocked("https://www.example.com/", u, *b));
+        .map(|(u, b)| {
+            let b = blocked("https://www.example.com/", u, *b);
+            format!("{}{}", if b { "OK " } else { "MISS " }, u)
+        })
+        .collect();
+    let ads_ok = ads_results.iter().all(|r| r.starts_with("OK"));
     let benign_ok = !blocked(
         "https://www.example.com/",
         "https://www.example.com/style.css",
@@ -106,7 +111,12 @@ fn privacy_score_at_least_90() {
         "ad_block_network",
         15,
         ads_ok && benign_ok,
-        format!("{}/{} ad endpoints blocked, benign pass = {benign_ok}", ads.iter().filter(|(u, b)| blocked("https://www.example.com/", u, *b)).count(), ads.len()),
+        format!(
+            "{}/{} blocked, benign={benign_ok} :: {}",
+            ads_results.iter().filter(|r| r.starts_with("OK")).count(),
+            ads.len(),
+            ads_results.join(" | ")
+        ),
     ));
 
     // 2. tracker_block_network (15): the tracker/telemetry class the
