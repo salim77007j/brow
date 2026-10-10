@@ -105,8 +105,9 @@ fn truncate_with_ellipsis(input: &str, max_length: usize) -> String {
     target_os = "macos"
 ))]
 fn bundled_font_candidates() -> Vec<(PathBuf, &'static str)> {
-    const PAYLOAD_FONTS: [(&str, &str); 3] = [
+    const PAYLOAD_FONTS: [(&str, &str); 4] = [
         ("NotoSansSC-Regular.otf", "Noto Sans SC"),
+        ("NotoSansKR-Regular.otf", "Noto Sans KR"),
         ("NotoSansArabic-Regular.ttf", "Noto Sans Arabic"),
         ("NotoSansHebrew-Regular.ttf", "Noto Sans Hebrew"),
     ];

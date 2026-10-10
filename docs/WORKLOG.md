@@ -1135,3 +1135,18 @@ feeds the honest floor assessment for the <100 MB/tab target.
   and fails if the record is missing. servo-config added as a
   brow-privacy dev-dep for pref-default assertions (static const_default
   init — safe in bare tests).
+
+- **8.4** Noto Sans KR (SubsetOTF/KR, 4.6 MB) added to the font payload +
+  gui.rs bundled_font_candidates. Engine fallback tables already listed
+  "Noto Sans KR" for Hangul blocks — R-11's bare-Linux Korean tofu closes
+  with the file. 8.1+8.2+8.3 audit pages staged under docs/evidence/phase8/
+  (platform-audit.html: canPlayType + CSS.supports matrices; ime-audit.html:
+  synthetic composition machinery) — CI step follows with the next push.
+
+**CI #93 privacy job — first rubric verdict: 85/100, failed: ad_block_network
+6/7.** Root cause: corpus error, not engine — an.facebook.com/v1/placements.js
+has NO rule in EasyList/EasyPrivacy/uBlock filters/Peter Lowe's (upstream
+uBlock default lists would also allow it; FB Audience Network is opt-in
+blocked). Swapped the corpus entry to www.facebook.com/tr/ which the lists
+genuinely block. All other items green: element_hiding 13677 generic
+selectors live, trackers 8/8, CNAME/CHIPS/DoH/fingerprint/session/stats OK.

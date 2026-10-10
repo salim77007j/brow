@@ -12,6 +12,7 @@ these files directly by path (`servoshell desktop/gui.rs configure_fonts`).
 | NotoSansArabic-Regular.ttf / NotoSansArabic-Bold.ttf | Noto Sans Arabic | Arabic | notofonts.github.io (hinted TTF) |
 | NotoSansHebrew-Regular.ttf | Noto Sans Hebrew | Hebrew | notofonts.github.io (hinted TTF, v3.001) |
 | NotoSansSC-Regular.otf | Noto Sans SC | Simplified Chinese, Japanese kana, full CJK URO (99.9%), fullwidth, CJK punctuation | noto-cjk repo, Sans/SubsetOTF/SC (v2.004) |
+| NotoSansKR-Regular.otf | Noto Sans KR | Hangul syllables + jamo (brow 8.4: closes the bare-Linux Korean tofu gap, R-11) | noto-cjk repo, Sans/SubsetOTF/KR |
 
 Family names are matched by the engine's script-aware fallback tables
 (`components/fonts/platform/{windows,macos}/font_list.rs` and

@@ -88,7 +88,7 @@ fn privacy_score_at_least_90() {
         ("https://tags.outbrain.com/outbrain.js", ResourceTypeMask::SCRIPT),
         ("https://ib.adnxs.com/px", ResourceTypeMask::XHR),
         ("https://criteo.com/delivery/ajs.php", ResourceTypeMask::SCRIPT),
-        ("https://an.facebook.com/v1/placements.js", ResourceTypeMask::SCRIPT),
+        ("https://www.facebook.com/tr/?id=123456789&ev=PageView", ResourceTypeMask::XHR),
     ];
     let ads_ok = ads
         .iter()

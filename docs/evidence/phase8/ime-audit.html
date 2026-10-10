@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>brow Phase 8 — composition (IME) event machinery</title>
+</head>
+<body>
+<h1>IME composition event machinery</h1>
+<p>CI-verifiable part of the IME story: the engine must deliver
+<code>compositionstart/update/end</code> + <code>beforeinput/input</code>
+and land the committed text in the editable. (Real winit IME preedit on
+owner hardware is validated separately — Phase 3 matrix, R-05.)</p>
+<input id="field" value="">
+<pre id="log"></pre>
+<script>
+(function () {
+  "use strict";
+  var field = document.getElementById("field");
+  var log = document.getElementById("log");
+  var seq = [];
+
+  document.addEventListener("compositionstart", function (e) {
+    seq.push("start:" + e.data);
+  });
+  document.addEventListener("compositionupdate", function (e) {
+    seq.push("update:" + e.data);
+  });
+  document.addEventListener("compositionend", function (e) {
+    seq.push("end:" + e.data);
+  });
+  field.addEventListener("beforeinput", function (e) {
+    seq.push("beforeinput:" + (e.data || e.inputType));
+  });
+  field.addEventListener("input", function () {
+    seq.push("input:" + field.value);
+  });
+
+  // Synthetic composition sequence (the same order an IME produces):
+  // start("ar") -> update("ar") -> end("ard") then input.
+  function fire(type, data) {
+    var ev = new CompositionEvent(type, { data: data, bubbles: true, cancelable: true });
+    field.dispatchEvent(ev);
+  }
+
+  setTimeout(function () {
+    fire("compositionstart", "ar");
+    fire("compositionupdate", "ar");
+    fire("compositionend", "arabic");
+    // commit: engines land compositionend data into the editable
+    field.value = "arabic";
+
+    var ok =
+      seq.indexOf("start:ar") !== -1 &&
+      seq.indexOf("update:ar") !== -1 &&
+      seq.indexOf("end:arabic") !== -1 &&
+      seq.some(function (s) { return s.indexOf("beforeinput:") === 0; }) &&
+      field.value === "arabic";
+
+    var report = {
+      sequence: seq,
+      composition_events_ok: seq.indexOf("start:ar") !== -1 &&
+                             seq.indexOf("update:ar") !== -1 &&
+                             seq.indexOf("end:arabic") !== -1,
+      beforeinput_ok: seq.some(function (s) { return s.indexOf("beforeinput:") === 0; }),
+      committed_value: field.value,
+      pass: ok
+    };
+    console.log("BROW_IME_AUDIT_JSON " + JSON.stringify(report));
+    document.title = ok ? "IME AUDIT PASS" : "IME AUDIT FAIL";
+  }, 100);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>brow Phase 8 — platform capabilities audit</title>
+</head>
+<body>
+<h1>brow platform audit (media codecs + modern CSS)</h1>
+<p>Loaded by the Phase 8 CI harness. Probes what the engine can actually
+play and which modern CSS features its parser supports, prints one
+machine-readable JSON line to the console
+(<code>BROW_PLATFORM_AUDIT_JSON {...}</code>), and mirrors a compact verdict
+into the document title so the screenshot is evidence too.</p>
+<video id="probe" width="8" height="8"></video>
+<script>
+(function () {
+  "use strict";
+
+  function canPlay(type) {
+    try {
+      var v = document.getElementById("probe");
+      var r = v.canPlayType(type);
+      return (r === "probably" || r === "maybe") ? r : "";
+    } catch (e) { return ""; }
+  }
+
+  // ---- media / codecs -------------------------------------------------
+  // Level "must": the media stack must answer canPlayType at all and
+  // support the open codecs a 2026 site can reasonably require.
+  // Level "want": recorded honestly — codec presence depends on the
+  // build's media backend; absence is a documented limitation, not a
+  // harness failure.
+  var media = {
+    "media element API": [!!window.HTMLMediaElement &&
+                          typeof document.getElementById("probe").canPlayType === "function", "must"],
+    "h264 (avc1)":      [canPlay('video/mp4; codecs="avc1.42E01E"'), "want"],
+    "h265 (hvc1)":      [canPlay('video/mp4; codecs="hvc1.1.6.L93.B0"'), "want"],
+    "vp8 (webm)":       [canPlay('video/webm; codecs="vp8"'), "must"],
+    "vp9 (webm)":       [canPlay('video/webm; codecs="vp9"'), "want"],
+    "av1 (mp4)":        [canPlay('video/mp4; codecs="av01.0.05M.08"'), "want"],
+    "aac":              [canPlay('audio/mp4; codecs="mp4a.40.2"'), "want"],
+    "mp3":              [canPlay("audio/mpeg"), "must"],
+    "opus":             [canPlay('audio/webm; codecs="opus"'), "must"],
+    "flac":             [canPlay("audio/flac"), "want"],
+    "MediaSource":      [typeof window.MediaSource === "function", "want"],
+    "HTMLVideoElement": [typeof window.HTMLVideoElement === "function", "must"],
+    "HTMLAudioElement": [typeof window.HTMLAudioElement === "function", "must"]
+  };
+
+  // ---- modern CSS ------------------------------------------------------
+  // CSS.supports checks the PARSER (stylo). Selector features use the
+  // selector() form.
+  var css = {
+    ":is()/:where()":     [window.CSS && CSS.supports("selector(:is(a, b))"), "must"],
+    ":focus-visible":     [window.CSS && CSS.supports("selector(a:focus-visible)"), "must"],
+    "gap (flex)":         [window.CSS && CSS.supports("gap", "4px"), "must"],
+    "aspect-ratio":       [window.CSS && CSS.supports("aspect-ratio", "16 / 9"), "must"],
+    "color-scheme":       [window.CSS && CSS.supports("color-scheme", "dark light"), "must"],
+    "accent-color":       [window.CSS && CSS.supports("accent-color", "red"), "must"],
+    "oklch color":        [window.CSS && CSS.supports("color", "oklch(51% 0.1 20)"), "want"],
+    "dvh units":          [window.CSS && CSS.supports("height", "100dvh"), "want"],
+    ":has()":             [window.CSS && CSS.supports("selector(a:has(b))"), "want"],
+    "container queries":  [window.CSS && CSS.supports("container-type", "inline-size"), "want"],
+    "subgrid":            [window.CSS && CSS.supports("grid-template-rows", "subgrid"), "want"],
+    "nesting (&)":        [window.CSS && CSS.supports("selector(&)"), "want"],
+    "backdrop-filter":    [window.CSS && CSS.supports("backdrop-filter", "blur(2px)"), "want"],
+    "text-wrap balance":  [window.CSS && CSS.supports("text-wrap", "balance"), "want"],
+    "transform individual":[window.CSS && CSS.supports("rotate", "45deg"), "want"]
+  };
+
+  var missing_must = [];
+  var report = { media: {}, css: {} };
+  Object.keys(media).forEach(function (k) {
+    var ok = !!media[k][0];
+    report.media[k] = { supported: ok, level: media[k][1] };
+    if (!ok && media[k][1] === "must") missing_must.push("media:" + k);
+  });
+  Object.keys(css).forEach(function (k) {
+    var ok = !!css[k][0];
+    report.css[k] = { supported: ok, level: css[k][1] };
+    if (!ok && css[k][1] === "must") missing_must.push("css:" + k);
+  });
+
+  report.totals = {
+    media_total: Object.keys(media).length,
+    media_supported: Object.keys(media).filter(function (k) { return media[k][0]; }).length,
+    css_total: Object.keys(css).length,
+    css_supported: Object.keys(css).filter(function (k) { return css[k][0]; }).length,
+    missing_must: missing_must
+  };
+
+  var json = JSON.stringify(report);
+  console.log("BROW_PLATFORM_AUDIT_JSON " + json);
+  document.title = missing_must.length === 0
+    ? "PLATFORM AUDIT PASS media " + report.totals.media_supported + "/" + report.totals.media_total +
+      " css " + report.totals.css_supported + "/" + report.totals.css_total
+    : "PLATFORM AUDIT FAIL " + missing_must.join(",");
+})();
+</script>
+</body>
+</html>
