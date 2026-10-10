@@ -4,7 +4,7 @@
 
 use std::borrow::ToOwned;
 use std::cell::{Cell, RefCell, RefMut};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::Entry;
 use std::default::Default;
 use std::ffi::c_void;
@@ -110,7 +110,10 @@ use webrender_api::ExternalScrollId;
 use webrender_api::units::{DeviceIntSize, DevicePixel, LayoutPixel, LayoutPoint};
 
 use crate::dom::StatelessWorkletThreadPool;
+use crate::dom::bindings::callback::ExceptionHandling;
 use crate::dom::bindings::codegen::Bindings::AnimationFrameProviderBinding::FrameRequestCallback;
+use crate::dom::bindings::codegen::Bindings::IdleDeadlineBinding::{IdleRequestCallback, IdleRequestOptions};
+use crate::dom::idle_deadline::IdleDeadline;
 use crate::dom::bindings::codegen::Bindings::DocumentBinding::{
     DocumentMethods, DocumentReadyState, NamedPropertyValue,
 };
@@ -316,6 +319,12 @@ pub(crate) struct Window {
     cookie_store: MutNullableDom<CookieStore>,
     status: DomRefCell<DOMString>,
     trusted_types: MutNullableDom<TrustedTypePolicyFactory>,
+
+    /// brow (phase5.1-c): requestIdleCallback registry — handle -> callback.
+    /// <https://w3c.github.io/requestidlecallback/>
+    #[ignore_malloc_size_of = "callbacks are hard"]
+    idle_callback_list: DomRefCell<HashMap<u32, Rc<IdleRequestCallback>>>,
+    next_idle_callback_handle: Cell<u32>,
 
     /// The start of something resembling
     /// <https://html.spec.whatwg.org/multipage/#ongoing-navigation>
@@ -1852,6 +1861,43 @@ impl WindowMethods<crate::DomTypeHolder> for Window {
         let doc = self.Document();
         doc.cancel_animation_frame(ident);
         Ok(())
+    }
+
+    /// brow (phase5.1-c):
+    /// <https://w3c.github.io/requestidlecallback/#dom-window-requestidlecallback>
+    fn RequestIdleCallback(
+        &self,
+        callback: Rc<IdleRequestCallback>,
+        options: IdleRequestOptions,
+    ) -> u32 {
+        let handle = self.next_idle_callback_handle.get();
+        self.next_idle_callback_handle.set(handle.wrapping_add(1));
+        self.idle_callback_list.borrow_mut().insert(handle, callback);
+        // v1 idle model: run on the next event-loop turn (DOM manipulation
+        // task source) with a fresh 50 ms budget — see idle_deadline.rs.
+        // `options.timeout` is accepted per the IDL; the forced-run
+        // (didTimeout = true) refinement is tracked in PHASE5_PLAN 5.1-c.
+        let _ = options;
+        let this = Trusted::new(self);
+        self.upcast::<GlobalScope>()
+            .task_manager()
+            .dom_manipulation_task_source()
+            .queue(task!(idle_callback_fire: move |cx| {
+                let this = this.root();
+                let pending = this.idle_callback_list.borrow_mut().remove(&handle);
+                if let Some(callback) = pending {
+                    let deadline =
+                        IdleDeadline::new(&this, cx, CrossProcessInstant::now(), false);
+                    callback.Call__(cx, &deadline, ExceptionHandling::Report);
+                }
+            }));
+        handle
+    }
+
+    /// brow (phase5.1-c):
+    /// <https://w3c.github.io/requestidlecallback/#dom-window-cancelidlecallback>
+    fn CancelIdleCallback(&self, handle: u32) {
+        self.idle_callback_list.borrow_mut().remove(&handle);
     }
 
     /// <https://html.spec.whatwg.org/multipage/#dom-window-postmessage>
@@ -3999,6 +4045,8 @@ impl Window {
             layout_marker: DomRefCell::new(Rc::new(Cell::new(true))),
             current_event: DomRefCell::new(None),
             embedder_theme: Cell::new(embedder_theme),
+            idle_callback_list: DomRefCell::new(HashMap::new()),
+            next_idle_callback_handle: Cell::new(1),
             trusted_types: Default::default(),
             reporting_observer_list: Default::default(),
             report_list: Default::default(),

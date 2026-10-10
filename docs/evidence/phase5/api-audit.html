@@ -37,7 +37,7 @@ the document title so a screenshot is also evidence.</p>
     "element.animate":       ["must", function () { return typeof Element.prototype.animate === "function"; }],
     "Animation":             ["must", function () { return typeof Animation === "function"; }],
     "requestAnimationFrame": ["must", function () { return typeof requestAnimationFrame === "function"; }],
-    "requestIdleCallback":   ["want", function () { return typeof requestIdleCallback === "function"; }],
+    "requestIdleCallback": ["must", function () { return typeof requestIdleCallback === "function" && typeof cancelIdleCallback === "function"; }],
     // Fetch / network
     "fetch":                 ["must", function () { return typeof fetch === "function"; }],
     "Request":               ["must", function () { return typeof Request === "function"; }],
@@ -134,6 +134,23 @@ the document title so a screenshot is also evidence.</p>
     performance.measure("brow-audit-measure", "brow-audit-mark");
     probes.performanceMarkMeasureFunctional = performance.getEntriesByName("brow-audit-measure").length > 0;
   } catch (e) { probes.performanceMarkMeasureFunctional = false; }
+  try {
+    var rafDone = false;
+    var ricDone = false;
+    var ricHandle = 0;
+    requestAnimationFrame(function () { rafDone = true; });
+    ricHandle = requestIdleCallback(function (deadline) {
+      ricDone = typeof deadline.didTimeout === "boolean" &&
+        typeof deadline.timeRemaining() === "number";
+    });
+    setTimeout(function () {
+      // Recorded async; the harness reads it after load.
+      window.__brow_ric_probe = { rafDone: rafDone, ricDone: ricDone,
+        canceled: (cancelIdleCallback(ricHandle), true) };
+      try { console.log("BROW_RIC_PROBE " + JSON.stringify(window.__brow_ric_probe)); } catch (e2) {}
+    }, 120);
+    probes.requestIdleCallbackFunctional = true;
+  } catch (e) { probes.requestIdleCallbackFunctional = false; }
   try {
     var k = new Uint8Array(16);
     window.crypto.getRandomValues(k);

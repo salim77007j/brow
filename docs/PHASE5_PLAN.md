@@ -43,8 +43,11 @@ geolocation, window.close().
 - **MSE/MediaSource**: NOT implemented in this engine (no webidl) —
   this is the YouTube pipeline blocker, tracked R-17. Porting MSE is an
   upstream-scale project; tracked as upstream PR candidate.
-- **requestIdleCallback**: not implemented. Candidate for a local patch
-  (scheduler idle task) — queued 5.1-c.
+- **requestIdleCallback**: IMPLEMENTED (5.1-c) — `IdleDeadline.webidl`
+  + `dom/idle_deadline.rs` + Window registry/queueing. v1 model: the
+  callback runs on the next event-loop turn with the standard 50 ms
+  budget; `options.timeout` forced-run (didTimeout=true) is a v2
+  refinement, documented in code and here.
 
 ## 5.2 int32/int64 audit
 

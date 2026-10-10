@@ -273,6 +273,9 @@ pub(crate) mod globalscope;
 pub(crate) use self::globalscope::*;
 pub(crate) mod html;
 pub(crate) use self::html::*;
+// brow (phase5.1-c): requestIdleCallback / IdleDeadline.
+pub(crate) mod idle_deadline;
+pub(crate) use self::idle_deadline::*;
 pub(crate) mod indexeddb;
 pub(crate) use self::indexeddb::*;
 pub(crate) mod intersectionobserver;
