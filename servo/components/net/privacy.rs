@@ -130,7 +130,11 @@ impl PrivacyState {
         if !pref!(network_privacy_filter_enabled) {
             return None;
         }
-        self.engine
+        // brow (7.3): the lock holds Option<&'static FilterEngine>;
+        // get_or_init returns &Option<...> — deref-COPY the whole Option
+        // out (Option<&T> is Copy) so the return is Option<&FilterEngine>.
+        *self
+            .engine
             .get_or_init(|| {
                 // brow (v0.6.1, fix 3.1): resolution order — pref path,
                 // exe-relative resources (walk the exe's ancestor dirs the
@@ -199,10 +203,6 @@ impl PrivacyState {
                     },
                 }
             })
-            // brow (7.3): the lock holds Option<&'static FilterEngine> —
-            // deref-COPY the inner value out (Option<&T> is Copy), so the
-            // return is Option<&FilterEngine> without a double reference.
-            .map(|opt| *opt)
     }
 
     /// The site origin for `$domain=` / party evaluation: the client origin
