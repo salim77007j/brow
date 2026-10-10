@@ -38,6 +38,14 @@ use brow_privacy::stats::PrivacyStats;
 /// precedence so updates still work.
 const EMBEDDED_FILTER_LIST: &str =
     include_str!("../../support/brow-privacy/assets/easylist-snapshot.txt");
+// brow (phase7.1): EasyPrivacy ships alongside EasyList — EasyList is the
+// ad half of the uBlock-style stack, EasyPrivacy is the tracker half
+// (analytics beacons, session-replay, fingerprinting endpoints). Without
+// it the engine "blocks ads" but counts trackers, which is exactly the
+// owner's "ad blocker works but rated poorly" report. Same ABP syntax,
+// same parser.
+const EMBEDDED_PRIVACY_LIST: &str =
+    include_str!("../../support/brow-privacy/assets/easyprivacy-snapshot.txt");
 
 pub struct PrivacyState {
     /// Filter engine, built lazily from the configured list; `None` when
@@ -146,11 +154,14 @@ impl PrivacyState {
                     .map(|p| p.as_path())
                     .collect();
                 if existing.is_empty() {
-                    match brow_privacy::lists::engine_with_builtin(EMBEDDED_FILTER_LIST, &[]) {
+                    match brow_privacy::lists::engine_with_builtins(
+                        &[EMBEDDED_FILTER_LIST, EMBEDDED_PRIVACY_LIST],
+                        &[],
+                    ) {
                         Ok(engine) => {
                             log::info!(
                                 "brow privacy: no filter list file found at {paths:?}; \
-                                 using embedded EasyList snapshot ({} network rules)",
+                                 using embedded EasyList+EasyPrivacy snapshots ({} network rules)",
                                 engine.network_rule_count()
                             );
                             return Some(engine);
@@ -166,10 +177,18 @@ impl PrivacyState {
                         },
                     }
                 }
-                match brow_privacy::lists::engine_from_files(&existing) {
+                // brow (phase7.1): file-based lists (pref / exe-relative
+                // updates, typically EasyList-only) are ADDITIVE with the
+                // embedded EasyPrivacy snapshot so the tracker half of the
+                // stack can never be dropped by a list refresh.
+                match brow_privacy::lists::engine_with_builtins(
+                    &[EMBEDDED_PRIVACY_LIST],
+                    &existing,
+                ) {
                     Ok(engine) => {
                         log::info!(
-                            "brow privacy: filter engine loaded {} network rules",
+                            "brow privacy: filter engine loaded {} network rules \
+                             (files + embedded EasyPrivacy)",
                             engine.network_rule_count()
                         );
                         Some(engine)

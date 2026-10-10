@@ -42,13 +42,22 @@ pub mod lists {
         Ok(FilterEngine::from_lists(&refs))
     }
 
-    /// Build an engine from embedded text plus optional files.
-    pub fn engine_with_builtin(builtin: &str, extra: &[&Path]) -> std::io::Result<FilterEngine> {
-        let mut texts = vec![builtin.to_string()];
+    /// Build an engine from embedded texts plus optional files.
+    /// brow (phase7.1): multi-builtin variant — EasyList and EasyPrivacy
+    /// ship embedded together; file-based lists (user/pref updates) are
+    /// ADDITIVE on top of EasyPrivacy so the tracker half can never be
+    /// lost by a file override that only contains EasyList.
+    pub fn engine_with_builtins(builtins: &[&str], extra: &[&Path]) -> std::io::Result<FilterEngine> {
+        let mut texts: Vec<String> = builtins.iter().map(|b| (*b).to_string()).collect();
         for p in extra {
             texts.push(std::fs::read_to_string(p)?);
         }
         let refs: Vec<&str> = texts.iter().map(|t| t.as_str()).collect();
         Ok(FilterEngine::from_lists(&refs))
+    }
+
+    /// Build an engine from embedded text plus optional files.
+    pub fn engine_with_builtin(builtin: &str, extra: &[&Path]) -> std::io::Result<FilterEngine> {
+        Self::engine_with_builtins(&[builtin], extra)
     }
 }

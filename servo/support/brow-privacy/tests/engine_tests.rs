@@ -19,6 +19,8 @@ use std::sync::OnceLock;
 use url::Url;
 
 const EASYLIST: &str = include_str!("../assets/easylist-snapshot.txt");
+// brow (phase7.1): the tracker half ships embedded next to the ad half.
+const EASYPRIVACY: &str = include_str!("../assets/easyprivacy-snapshot.txt");
 
 /// One shared engine for the whole test binary (de-flake, 2026-10-08): the
 /// budget test below measures a *process-wide* VmRSS delta, and cargo runs
@@ -29,6 +31,13 @@ const EASYLIST: &str = include_str!("../assets/easylist-snapshot.txt");
 fn engine() -> &'static FilterEngine {
     static ENGINE: OnceLock<FilterEngine> = OnceLock::new();
     ENGINE.get_or_init(|| FilterEngine::from_lists(&[EASYLIST]))
+}
+
+/// brow (phase7.1): the production combination — EasyList + EasyPrivacy —
+/// built once, shared like `engine()`.
+fn engine_full_stack() -> &'static FilterEngine {
+    static ENGINE: OnceLock<FilterEngine> = OnceLock::new();
+    ENGINE.get_or_init(|| FilterEngine::from_lists(&[EASYLIST, EASYPRIVACY]))
 }
 
 fn decide(e: &FilterEngine, site: &str, req: &str, bit: u32) -> Decision {
@@ -131,6 +140,50 @@ fn out_of_scope_trackers_need_a_privacy_list() {
         ResourceTypeMask::SCRIPT,
     );
     let _ = s;
+}
+
+#[test]
+fn real_easyprivacy_ships_and_blocks_trackers() {
+    // brow (phase7.1): the production stack is EasyList + EasyPrivacy —
+    // the owner's "tracker blocker rated poorly" was the missing tracker
+    // half. The embedded snapshot must parse into a large rule set and
+    // actually block the classic analytics/session-replay endpoints.
+    let e = engine_full_stack();
+    let stats = e.parse_stats();
+    // EasyList alone parses ~70k block rules in this snapshot; the combined
+    // stack adds EasyPrivacy's ~40k more. Use the engine's own count.
+    assert!(
+        e.network_rule_count() > 90_000,
+        "combined stack should far exceed EasyList alone (got {})",
+        e.network_rule_count()
+    );
+    assert!(stats.network_block > 90_000);
+
+    // These tracker endpoints are covered by EasyPrivacy, not EasyList —
+    // the full stack must block all of them (third-party from the sites).
+    for (site, req, bit) in [
+        ("https://www.nytimes.com/", "https://www.googletagmanager.com/gtm.js?id=GTM-X", ResourceTypeMask::SCRIPT),
+        ("https://www.nytimes.com/", "https://www.google-analytics.com/analytics.js", ResourceTypeMask::SCRIPT),
+        ("https://en.wikipedia.org/", "https://static.hotjar.com/c/hotjar-123.js?sv=5", ResourceTypeMask::SCRIPT),
+        ("https://www.bbc.com/", "https://www.clarity.ms/tag/abc", ResourceTypeMask::SCRIPT),
+        ("https://www.bbc.com/", "https://script.hotjar.com/modules.xxxx.html", ResourceTypeMask::SCRIPT),
+    ] {
+        let d = decide(e, site, req, bit);
+        assert!(
+            matches!(d, Decision::Block { .. }),
+            "full stack must block {req} (got {d:?})"
+        );
+    }
+
+    // The full stack never blocks LESS than EasyList alone on ad endpoints.
+    let e_ads_only = engine();
+    for (site, req, bit) in [
+        ("https://www.nytimes.com/", "https://ad.doubleclick.net/ddm/adj/x", ResourceTypeMask::SCRIPT),
+        ("https://www.bbc.com/", "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js", ResourceTypeMask::SCRIPT),
+    ] {
+        assert_blocked(e_ads_only, site, req, bit);
+        assert_blocked(e, site, req, bit);
+    }
 }
 
 #[test]
