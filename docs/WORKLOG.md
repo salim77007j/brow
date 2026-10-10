@@ -993,3 +993,40 @@ fix queued with this entry; run #79 expected fully green.
 Registers: R-18 unchanged (skips remain); new note — crash_handler
 Linux dead-code warnings (3 fns only called on Windows paths) tracked
 for a follow-up cfg tidy, non-blocking.
+
+## Phase 5 — Web platform completeness (started 2026-10-10)
+
+Owner-hardware report (v0.7 session): 4 critical errors on real sites.
+Root causes researched in source, fixed in order:
+
+- **5.3** `87e22e5ba` + `36bcf366a` — userscript delayed task ran on a
+  window whose active document was replaced (redirect/iframe swap):
+  `assert!(can_run_script())` panic = "page crashed"; same race threw
+  the payload's SecurityError. Gate: `can_run_script()` only (fully
+  active ⟹ active-document identity; the task! macro traces declared
+  fields only — no extra Dom captures, GC-safe).
+- **5.4** `f644d931e` — payload hardened: location read in try/catch;
+  Function.prototype.toString interceptor (WeakSet) so all 11 patched
+  methods report `[native code]`; unit tests assert all three
+  invisibility properties.
+- **5.1-a** `c7927ecb0` — 20 dom_* pref defaults flipped ON (D-018) —
+  the implemented-but-off surface was the entire "API missing" class.
+- **5.2** `ea8938ad3` — [Clamp] setTimeout/setInterval: epoch-ms delays
+  wrapped i32 and fired immediately; now clamp to 2^31-1 (Chrome/FF
+  behavior). The literal error string is page-authored JS on
+  chatgpt.com (audited: servo tree, mozjs, mozjs_sys, wasm-bindgen —
+  R-19); the engine trigger class is removed.
+- **5.1-c** `cfec5e0c3` + `5730aa88e` + `4cc8e3162` — requestIdleCallback
+  implemented (IdleDeadline.webidl, dom/idledeadline.rs, Window
+  registry); v1 idle model documented; timeout forced-run = v2.
+- **5.5** `a37e6fb11` — CI harness live: API audit gate (~60 probes,
+  must-level absence fails the job) + 12-site headless matrix (peak
+  process-tree RSS, panic gate with RUST_BACKTRACE, JS console counts,
+  screenshots) → docs/evidence/phase5/ + brow-phase5-evidence artifact.
+- **7.1** `404d2a984` — EasyPrivacy embedded (57,070 lines) next to
+  EasyList; file refreshes are additive with EasyPrivacy so the tracker
+  half can never be dropped; new full-stack test blocks
+  GTM/GA/Hotjar/Clarity third-party endpoints.
+
+Registers: D-018 recorded; R-19 (int32, page-authored string — engine
+class mitigated), R-20 (immature APIs now exposed, CI-gated) OPEN.

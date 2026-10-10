@@ -451,3 +451,27 @@ makes pre-4.4 disk entries — including already-poisoned ones on owner
 hardware — unreachable without a migration (they age out under the size
 cap). Owner diagnostic for poisoned installs: fresh profile or first 4.4
 run naturally bypasses old entries.
+
+## D-018 — Web API surface: implemented-but-off prefs ship ON; genuinely-risky interfaces stay off (phase 5.1)
+
+**Decision** (2026-10-10, phase 5.1): `const_default()` flips 20 `dom_*`
+prefs to `true` — adoptedStyleSheets, IntersectionObserver(+Entry), Web
+Animations, WebGL2, IndexedDB, ServiceWorker, Notification, async
+clipboard, Permissions, OffscreenCanvas, CanvasCapture, CookieStore,
+StorageManager, visualViewport, composition events, execCommand,
+FontFace, Entries API, WakeLock, geolocation, window.close(). Kept OFF
+with reasons: **WebGPU** (experimental wgpu backend; GPU-crash risk on
+owner hardware is the D-015 class we just exited — needs owner
+validation first), **WebRTC** (connection formation incomplete), **WebXR
+session** (hardware), **MSE** (not implemented upstream at all — R-17).
+
+**Why**: these interfaces are implemented in the engine and gated
+`[Pref=...]` only; shipping them off made brow fail feature detection on
+mainstream sites (owner evidence: IntersectionObserver on GitHub,
+adoptedStyleSheets on CSS-in-JS sites). Chrome ships all of the enabled
+set unconditionally.
+
+**Consequence**: site feature-detection sees a 2026-parity surface;
+residual risk is immature-service-worker/WebGL2 paths — covered by the
+CI panic gate (phase 5.5 matrix); any panic flips back the offending
+pref with evidence.
