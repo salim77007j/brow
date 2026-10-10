@@ -22,6 +22,7 @@ use servo_base::cross_process_instant::CrossProcessInstant;
 
 use crate::dom::bindings::codegen::Bindings::IdleDeadlineBinding::IdleDeadlineMethods;
 use crate::dom::bindings::codegen::Bindings::PerformanceBinding::DOMHighResTimeStamp;
+use crate::dom::bindings::num::Finite;
 use crate::dom::performance::performance::ToDOMHighResTimeStamp;
 use crate::dom::window::Window;
 
@@ -70,7 +71,7 @@ impl IdleDeadlineMethods<crate::DomTypeHolder> for IdleDeadline {
     /// <https://w3c.github.io/requestidlecallback/#dom-idledeadline-timeremaining>
     fn TimeRemaining(&self) -> DOMHighResTimeStamp {
         let elapsed = (CrossProcessInstant::now() - self.start).to_dom_high_res_time_stamp();
-        (IDLE_BUDGET_MS - *elapsed).max(0.0)
+        Finite::wrap((IDLE_BUDGET_MS - *elapsed).max(0.0))
     }
 
     /// <https://w3c.github.io/requestidlecallback/#dom-idledeadline-didtimeout>
