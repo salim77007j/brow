@@ -61,6 +61,17 @@ mod tests {
         let content = std::fs::read_to_string(&written[0]).unwrap();
         assert!(content.contains("getImageData"));
         assert!(content.ends_with("})();\n"));
+        // brow (phase5.4): the payload must be invisible to sites —
+        // (a) no unguarded `location` access (SecurityError on document
+        //     swap was owner-hardware evidence),
+        assert!(content.contains("try { BROW_ORIG = String(location.origin"));
+        // (b) patched methods must report `[native code]` through
+        //     Function.prototype.toString (detection vector),
+        assert!(content.contains("BROW_PATCHED"));
+        assert!(content.contains("Function.prototype.toString = browNative"));
+        // (c) every patched call site goes through the native-code wrapper.
+        assert!(!content.contains(".prototype.getImageData = function("));
+        assert!(content.contains("= browNative(function("));
         // Off level → empty payload → no file written
         let written_off = write_defense_package(
             &dir,

@@ -222,7 +222,13 @@ const PRNG: &str = r#"/* xorshift128+ seeded per-origin per-session.
    Session words are baked in; the origin hash is computed at document load
    from location.origin, so every site gets distinct but session-stable
    noise. */
-var BROW_ORIG = String(location.origin || "null");
+/* brow (phase5.4): the location read is failure-tolerant. On a document
+   mid-swap the Location cross-origin check can legitimately throw; a
+   userscript must NEVER surface an error to the page (owner-hardware
+   evidence: SecurityError at brow:fingerprint-defense). The defense then
+   degrades to session-only seeds — invisible to the site either way. */
+var BROW_ORIG = "null";
+try { BROW_ORIG = String(location.origin || "null"); } catch (_browE) {}
 var BROW_H = 0x811C9DC5;
 for (var _i = 0; _i < BROW_ORIG.length; _i++) {
   BROW_H = ((BROW_H ^ BROW_ORIG.charCodeAt(_i)) * 0x01000193) >>> 0;
@@ -231,6 +237,29 @@ var S0 = ((BROW_H ^ BROW_KEY[0]) >>> 0) || 0x9E3779B9;
 var S1 = BROW_KEY[1] >>> 0;
 var S2 = ((BROW_H ^ BROW_KEY[2]) >>> 0) || 0x85EBCA6B;
 var S3 = BROW_KEY[3] >>> 0;
+/* brow (phase5.4): native-code spoofing. Any patched method whose
+   `toString()` returns JS source instead of `[native code]` is an instant
+   fingerprint-detection signal. We keep a WeakSet of patched functions and
+   route Function.prototype.toString through an interceptor that reports
+   native code for them; the interceptor itself is in the set so
+   `toString.toString()` also looks native. */
+var BROW_PATCHED = new WeakSet();
+var BROW_ORIG_TOSTRING = Function.prototype.toString;
+function browNative(fn, name) {
+  try {
+    BROW_PATCHED.add(fn);
+    Object.defineProperty(fn, "name", { value: name, configurable: true });
+  } catch (_e) {}
+  return fn;
+}
+try {
+  Function.prototype.toString = browNative(function toString() {
+    if (BROW_PATCHED.has(this)) {
+      return "function " + String(this.name || "") + "() { [native code] }";
+    }
+    return BROW_ORIG_TOSTRING.call(this);
+  }, "toString");
+} catch (_e) {}
 function browNext() {
   var a = S0, b = S1, c = S2, d = S3;
   var t = (a + (b << 0)) >>> 0;
@@ -248,7 +277,7 @@ function browBound(v) { return Math.max(0, Math.min(255, v | 0)); }
 const CANVAS_2D: &str = r#"(function() {
   if (!window.HTMLCanvasElement || !window.CanvasRenderingContext2D) return;
   var origGetImageData = CanvasRenderingContext2D.prototype.getImageData;
-  CanvasRenderingContext2D.prototype.getImageData = function() {
+  CanvasRenderingContext2D.prototype.getImageData = browNative(function() {
     var data = origGetImageData.apply(this, arguments);
     try {
       var px = data.data;
@@ -258,9 +287,9 @@ const CANVAS_2D: &str = r#"(function() {
       Object.defineProperty(data, "data", { value: px });
     } catch (e) {}
     return data;
-  };
+  }, "getImageData");
   var origToDataURL = HTMLCanvasElement.prototype.toDataURL;
-  HTMLCanvasElement.prototype.toDataURL = function() {
+  HTMLCanvasElement.prototype.toDataURL = browNative(function() {
     try {
       var ctx = this.getContext && this.getContext("2d");
       if (ctx && ctx.getImageData) {
@@ -274,9 +303,9 @@ const CANVAS_2D: &str = r#"(function() {
       }
     } catch (e) {}
     return origToDataURL.apply(this, arguments);
-  };
+  }, "toDataURL");
   var origToBlob = HTMLCanvasElement.prototype.toBlob;
-  HTMLCanvasElement.prototype.toBlob = function(cb, type, q) {
+  HTMLCanvasElement.prototype.toBlob = browNative(function(cb, type, q) {
     try {
       var ctx = this.getContext && this.getContext("2d");
       if (ctx && ctx.getImageData) {
@@ -290,7 +319,7 @@ const CANVAS_2D: &str = r#"(function() {
       }
     } catch (e) {}
     return origToBlob.call(this, cb, type, q);
-  };
+  }, "toBlob");
 })();
 "#;
 
@@ -300,35 +329,35 @@ const WEBGL: &str = r#"(function() {
   var fakeVendor = "Brow Protected", fakeRenderer = "Brow WebGL (fingerprint protected)";
   var origGetParameter = WebGLRenderingContext.prototype.getParameter;
   var origGetParameter2 = window.WebGL2RenderingContext ? WebGL2RenderingContext.prototype.getParameter : null;
-  function patched(orig) {
-    return function(p) {
+  function patched(orig, name) {
+    return browNative(function(p) {
       if (p === VENDOR_UNMASKED) return fakeVendor;
       if (p === RENDERER_UNMASKED) return fakeRenderer;
       return orig.call(this, p);
-    };
+    }, name);
   }
-  WebGLRenderingContext.prototype.getParameter = patched(origGetParameter);
-  if (origGetParameter2) WebGL2RenderingContext.prototype.getParameter = patched(origGetParameter2);
+  WebGLRenderingContext.prototype.getParameter = patched(origGetParameter, "getParameter");
+  if (origGetParameter2) WebGL2RenderingContext.prototype.getParameter = patched(origGetParameter2, "getParameter");
   var origReadPixels = WebGLRenderingContext.prototype.readPixels;
   var origReadPixels2 = window.WebGL2RenderingContext ? WebGL2RenderingContext.prototype.readPixels : null;
-  function patchRead(orig) {
-    return function() {
+  function patchRead(orig, name) {
+    return browNative(function() {
       orig.apply(this, arguments);
       try {
         var px = arguments[6];
         if (px && px.length) { for (var i = 0; i < px.length; i += 97) px[i] = browBound(px[i] + browNoise(1)); }
       } catch (e) {}
-    };
+    }, name);
   }
-  WebGLRenderingContext.prototype.readPixels = patchRead(origReadPixels);
-  if (origReadPixels2) WebGL2RenderingContext.prototype.readPixels = patchRead(origReadPixels2);
+  WebGLRenderingContext.prototype.readPixels = patchRead(origReadPixels, "readPixels");
+  if (origReadPixels2) WebGL2RenderingContext.prototype.readPixels = patchRead(origReadPixels2, "readPixels");
 })();
 "#;
 
 const AUDIO: &str = r#"(function() {
   if (!window.AudioBuffer) return;
   var orig = AudioBuffer.prototype.getChannelData;
-  AudioBuffer.prototype.getChannelData = function(ch) {
+  AudioBuffer.prototype.getChannelData = browNative(function(ch) {
     var data = orig.call(this, ch);
     try {
       for (var i = 0; i < data.length; i += 501) {
@@ -336,7 +365,7 @@ const AUDIO: &str = r#"(function() {
       }
     } catch (e) {}
     return data;
-  };
+  }, "getChannelData");
 })();
 "#;
 
@@ -354,22 +383,22 @@ const NAVIGATOR: &str = r#"(function() {
 const FONTS: &str = r#"(function() {
   if (!window.CanvasRenderingContext2D) return;
   var origMeasure = CanvasRenderingContext2D.prototype.measureText;
-  CanvasRenderingContext2D.prototype.measureText = function() {
+  CanvasRenderingContext2D.prototype.measureText = browNative(function() {
     var m = origMeasure.apply(this, arguments);
     try {
       var j = 1 + (browNext() % 1000 - 500) / 1e6;
       if (m.width !== undefined) Object.defineProperty(m, "width", { value: m.width * j });
     } catch (e) {}
     return m;
-  };
+  }, "measureText");
   if (window.document && document.fonts && document.fonts.check) {
     var origCheck = document.fonts.check.bind(document.fonts);
-    document.fonts.check = function(spec, text) {
+    document.fonts.check = browNative(function(spec, text) {
       var allowed = ["monospace", "sans-serif", "serif", "system-ui"];
       var family = (spec || "").toLowerCase();
       for (var i = 0; i < allowed.length; i++) if (family.indexOf(allowed[i]) !== -1) return origCheck(spec, text);
       return false;
-    };
+    }, "check");
   }
 })();
 "#;
@@ -384,12 +413,12 @@ const RECTS: &str = r#"(function() {
              left: r.left + j, right: r.right + j, top: r.top + j, bottom: r.bottom + j,
              toJSON: r.toJSON ? r.toJSON.bind(r) : undefined };
   }
-  Element.prototype.getBoundingClientRect = function() {
+  Element.prototype.getBoundingClientRect = browNative(function() {
     var r = origRect.call(this);
     try { return jitterRect(r); } catch (e) { return r; }
-  };
+  }, "getBoundingClientRect");
   if (origRects) {
-    Element.prototype.getClientRects = function() {
+    Element.prototype.getClientRects = browNative(function() {
       var list = origRects.call(this);
       try {
         var out = [];
@@ -397,7 +426,7 @@ const RECTS: &str = r#"(function() {
         out.item = function(n) { return out[n]; };
         return out;
       } catch (e) { return list; }
-    };
+    }, "getClientRects");
   }
 })();
 "#;
@@ -406,11 +435,11 @@ const TIMEZONE: &str = r#"(function() {
   try {
     var fixed = "UTC";
     var orig = Intl.DateTimeFormat.prototype.resolvedOption;
-    Intl.DateTimeFormat.prototype.resolvedOption = function() {
+    Intl.DateTimeFormat.prototype.resolvedOption = browNative(function() {
       var o = orig.call(this);
       o.timeZone = fixed;
       return o;
-    };
+    }, "resolvedOption");
   } catch (e) {}
 })();
 "#;
