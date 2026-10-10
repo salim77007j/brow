@@ -58,6 +58,6 @@ pub mod lists {
 
     /// Build an engine from embedded text plus optional files.
     pub fn engine_with_builtin(builtin: &str, extra: &[&Path]) -> std::io::Result<FilterEngine> {
-        Self::engine_with_builtins(&[builtin], extra)
+        engine_with_builtins(&[builtin], extra)
     }
 }
