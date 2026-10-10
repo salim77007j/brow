@@ -36,6 +36,7 @@ pub(crate) struct IdleDeadline {
 
     /// Clock instant when the idle task started running; `timeRemaining`
     /// is the budget minus the elapsed slice.
+    #[no_trace]
     start: CrossProcessInstant,
 
     /// Whether this deadline comes from the `options.timeout` forced run.
@@ -63,11 +64,13 @@ impl IdleDeadline {
             cx,
         )
     }
+}
 
+impl IdleDeadlineMethods<crate::DomTypeHolder> for IdleDeadline {
     /// <https://w3c.github.io/requestidlecallback/#dom-idledeadline-timeremaining>
     fn TimeRemaining(&self) -> DOMHighResTimeStamp {
         let elapsed = (CrossProcessInstant::now() - self.start).to_dom_high_res_time_stamp();
-        (IDLE_BUDGET_MS - elapsed).max(0.0)
+        (IDLE_BUDGET_MS - *elapsed).max(0.0)
     }
 
     /// <https://w3c.github.io/requestidlecallback/#dom-idledeadline-didtimeout>

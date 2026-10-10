@@ -113,7 +113,7 @@ use crate::dom::StatelessWorkletThreadPool;
 use crate::dom::bindings::callback::ExceptionHandling;
 use crate::dom::bindings::codegen::Bindings::AnimationFrameProviderBinding::FrameRequestCallback;
 use crate::dom::bindings::codegen::Bindings::IdleDeadlineBinding::{IdleRequestCallback, IdleRequestOptions};
-use crate::dom::idle_deadline::IdleDeadline;
+use crate::dom::idledeadline::IdleDeadline;
 use crate::dom::bindings::codegen::Bindings::DocumentBinding::{
     DocumentMethods, DocumentReadyState, NamedPropertyValue,
 };
@@ -1868,7 +1868,7 @@ impl WindowMethods<crate::DomTypeHolder> for Window {
     fn RequestIdleCallback(
         &self,
         callback: Rc<IdleRequestCallback>,
-        options: IdleRequestOptions,
+        options: &IdleRequestOptions,
     ) -> u32 {
         let handle = self.next_idle_callback_handle.get();
         self.next_idle_callback_handle.set(handle.wrapping_add(1));
