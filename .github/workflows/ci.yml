@@ -442,6 +442,104 @@ jobs:
             fi
           done
 
+      - name: Phase 5 — Web API audit + real-site headless matrix (P5-T1/T2)
+        # brow (phase5): two gates on the product binary:
+        #  1. API audit — serve docs/evidence/phase5/api-audit.html on
+        #     loopback, load it headless, grep the machine-readable
+        #     BROW_API_AUDIT_JSON line from stdout. FAILS the job when any
+        #     "must" API is missing (IntersectionObserver,
+        #     adoptedStyleSheets, element.animate, WebGL2, indexedDB, ...).
+        #  2. Site matrix — load each real site headless, capture console
+        #     output, RSS and a screenshot into docs/evidence/phase5/. FAILS
+        #     the job when the engine panics (the "page crashed" class);
+        #     site-side console noise is recorded as evidence, not a gate,
+        #     until per-site budgets are tuned.
+        # RUST_BACKTRACE=1: panics must carry source locations so the next
+        # fix is precise (owner-reported int32 panic needs its backtrace).
+        run: |
+          sudo apt-get update && sudo apt-get install -y imagemagick
+          cd servo
+          export RUST_BACKTRACE=1
+          export LIBGL_ALWAYS_SOFTWARE=1
+          mkdir -p "$RUNNER_TEMP/phase5"
+          python3 -m http.server 8077 --directory "$GITHUB_WORKSPACE/docs/evidence/phase5" \
+            >"$RUNNER_TEMP/phase5/httpd.log" 2>&1 &
+          HTTPD=$!
+          sleep 2
+
+          audit_log="$RUNNER_TEMP/phase5/api-audit.log"
+          set +e
+          XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-audit" timeout 120 \
+            ./target/production-stripped/servoshell -z -o "$RUNNER_TEMP/phase5/api-audit.png" \
+            http://localhost:8077/api-audit.html >"$audit_log" 2>&1
+          set -e
+          kill $HTTPD 2>/dev/null || true
+
+          python3 - "$audit_log" "$RUNNER_TEMP/phase5" <<'PYEOF'
+          import json, re, sys
+          log_path, out_dir = sys.argv[1], sys.argv[2]
+          text = open(log_path, encoding="utf-8", errors="replace").read()
+          m = re.search(r"BROW_API_AUDIT_JSON (\{.*)", text)
+          if not m:
+              print("API audit: NO RESULT LINE — page did not run?"); sys.exit(1)
+          raw = m.group(1)
+          # The line may be followed by other output; take to the last '}'.
+          raw = raw[: raw.rfind("}") + 1]
+          data = json.loads(raw)
+          json.dump(data, open(f"{out_dir}/phase5-api-audit.json", "w"), indent=2)
+          print(f"API audit: {data['total'] - len(data['missing_must']) - len(data['missing_want'])}/{data['total']} present")
+          print(f"  missing_must: {data['missing_must'] or 'NONE'}")
+          print(f"  missing_want: {data['missing_want'] or 'NONE'}")
+          print(f"  probes: {json.dumps(data['probes'])}")
+          if data["missing_must"]:
+              print(f"::error::API audit FAILED — {len(data['missing_must'])} must-have APIs missing: {data['missing_must']}")
+              sys.exit(1)
+          print("::notice::API audit PASSED — every must-have Web API is present")
+          PYEOF
+
+          sites="example.com:https://example.com wikipedia:https://en.wikipedia.org/wiki/Main_Page github:https://github.com duckduckgo:https://duckduckgo.com bing:https://www.bing.com stackoverflow:https://stackoverflow.com mdn:https://developer.mozilla.org/en-US/ reddit:https://www.reddit.com hackernews:https://news.ycombinator.com bbc:https://www.bbc.com w3schools:https://www.w3schools.com xkcd:https://xkcd.com"
+          echo "| site | peak RSS MB | panics | js_errors | screenshot |" > "$RUNNER_TEMP/phase5/matrix.md"
+          echo "|---|---|---|---|---|" >> "$RUNNER_TEMP/phase5/matrix.md"
+          PANIC_SITES=""
+          for entry in $sites; do
+            name="${entry%%:*}"; url="${entry#*:}"
+            log="$RUNNER_TEMP/phase5/site-$name.log"
+            XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-$name" timeout 60 \
+              ./target/production-stripped/servoshell -z -o "$RUNNER_TEMP/phase5/site-$name.png" "$url" >"$log" 2>&1 &
+            SPID=$!
+            # Peak RSS across the whole process TREE (servo is
+            # multiprocess — content processes count). Sample while alive.
+            max_rss=0
+            for i in $(seq 1 26); do
+              kill -0 $SPID 2>/dev/null || break
+              tree=0
+              for p in $(pgrep -f "servoshell"); do
+                kb=$(awk '/VmRSS/{print $2}' "/proc/$p/status" 2>/dev/null || echo 0)
+                tree=$((tree + kb))
+              done
+              [ "$tree" -gt "$max_rss" ] && max_rss=$tree
+              sleep 2
+            done
+            wait $SPID 2>/dev/null || true
+            sleep 1
+            panics=$(grep -c "panicked\|assertion failed" "$log" || true)
+            jserrs=$(grep -ciE "SecurityError|ReferenceError|TypeError:|SyntaxError" "$log" || true)
+            shot="no"; [ -s "$RUNNER_TEMP/phase5/site-$name.png" ] && shot="yes"
+            echo "| $name | $((max_rss / 1024)) | $panics | $jserrs | $shot |" >> "$RUNNER_TEMP/phase5/matrix.md"
+            if [ "$panics" != "0" ]; then PANIC_SITES="$PANIC_SITES $name"; fi
+            echo "--- $name: panics=$panics js_errors=$jserrs rss_peak=$((max_rss / 1024))MB screenshot=$shot"
+          done
+          cat "$RUNNER_TEMP/phase5/matrix.md" | tee -a "$GITHUB_STEP_SUMMARY"
+          mkdir -p "$GITHUB_WORKSPACE/docs/evidence/phase5"
+          cp "$RUNNER_TEMP/phase5/phase5-api-audit.json" "$GITHUB_WORKSPACE/docs/evidence/phase5/" 2>/dev/null || true
+          cp "$RUNNER_TEMP/phase5/"*.png "$GITHUB_WORKSPACE/docs/evidence/phase5/" 2>/dev/null || true
+          cp "$RUNNER_TEMP/phase5/matrix.md" "$GITHUB_WORKSPACE/docs/evidence/phase5/phase5-site-matrix.md"
+          cp "$RUNNER_TEMP/phase5/"site-*.log "$GITHUB_WORKSPACE/docs/evidence/phase5/" 2>/dev/null || true
+          if [ -n "$PANIC_SITES" ]; then
+            echo "::error::Engine panics on:$PANIC_SITES — see docs/evidence/phase5 logs (RUST_BACKTRACE captured)"
+            exit 1
+          fi
+
       - name: Smoke test — binary runs
         # The workspace's default member is ports/servoshell; its binary is
         # named `servoshell` (see ports/servoshell/Cargo.toml [[bin]]).
@@ -504,6 +602,16 @@ jobs:
             brow-i18n.png
             brow-dpi2x.png
           if-no-files-found: ignore
+
+      - name: Upload Phase 5 evidence (API audit + site matrix)
+        # brow (phase5): audit JSON, per-site screenshots + logs + matrix —
+        # the evidence pack for the owner's 5.x deliverable.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: brow-phase5-evidence
+          path: docs/evidence/phase5/
+          if-no-files-found: warn
           retention-days: 30
 
   # Phase 0 (owner directive 0.7, DECISIONS D-005): Windows must compile on
