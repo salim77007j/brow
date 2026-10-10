@@ -1057,3 +1057,36 @@ class mitigated), R-20 (immature APIs now exposed, CI-gated) OPEN.
 **Next**: Phase 6 memory work (CI RSS baseline captured), Phase 7 score
 rubric + more filter lists, 50-site matrix expansion, ASan/TSan (P9),
 P10 final report.
+
+## Phase 6 — Resident memory (started 2026-10-10)
+
+Re-entry 4 (sandbox reset) recovered from docs/WORKLOG.md alone: fresh
+clone v0.7-rebuild, creds restored, state verified against Actions API
+(run #89 green, head a1ad1212f). Zero loss.
+
+Research (PHASE6_PLAN.md): 6 levers identified source-verified —
+jemalloc never tuned (background_thread=false default), js_mem_max -1 =
+u32::MAX unbounded, http memory cache 5000 entries, image cache without
+byte budget (deferred 6.3), font fallback map unbounded (deferred,
+upstream-scale), background-tab freeze ALREADY shipped phase 3.
+
+- **6.2** `tune_residency()` — allocator crate: jemalloc
+  background_thread ON + decay 5 s/5 s (best-effort mallctl, failures
+  logged); no-op stubs in the mimalloc/System/Windows modules; called
+  from cli.rs chrome path AND the ContentProcess branch (content
+  processes hold the DOM/JS/images). `log` made a hard dep of
+  servo-allocator (was optional behind allocation-tracking).
+- **6.5** JS heap bounds — js_mem_max 255 MB (in_range band exclusive
+  of 256! 256 would silently have stayed unbounded — caught in
+  review), bands 32/128 MB, growth 120-200 %.
+- **6.4** HTTP memory cache 5000→2000 entries.
+- **6.8** multi-URL CLI (bpaf positional many — EXTRA_URLS; first URL
+  active, extras hidden+throttled like phase 3 background tabs;
+  WebView.hide+set_throttled after create) + CI: setsid/PGID-scoped
+  sampling fixes cross-site contamination in the matrix, and a 5-tab
+  memory gate (5 real sites, one window) reports peak/steady tree RSS
+  with the panic gate.
+- **D-019** recorded; R-06 mitigation now has a measurement path.
+
+**Next**: CI run on this push decides 6.3 (image-cache byte budget) and
+feeds the honest floor assessment for the <100 MB/tab target.

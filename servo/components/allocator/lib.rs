@@ -35,6 +35,23 @@ pub struct HeapReport {
 
 pub use crate::platform::*;
 
+/// brow (phase 6.2): apply the platform's resident-memory tuning.
+///
+/// jemalloc (Linux build) ships with `background_thread` OFF: freed pages
+/// stay mapped and are only purged as a side effect of later allocation
+/// activity on the arena. A browser's steady state (page churn, image
+/// decode buffers, JS heaps) leaves tens of MB mapped-but-dirty per
+/// process that nothing ever touches again, so the purge never runs.
+/// Enabling the background thread + shortening the dirty/muzzy decays
+/// returns those pages to the OS without changing application behavior.
+///
+/// No-op on platforms without runtime-tunable allocators (Windows
+/// HeapAlloc, plain System fallback). Must be called once per process,
+/// as early as possible; safe to call again (idempotent values).
+pub fn tune_residency() {
+    crate::platform::tune_residency();
+}
+
 type EnclosingSizeFn = unsafe extern "C" fn(*const c_void) -> usize;
 
 /// # Safety
@@ -155,6 +172,60 @@ mod platform {
     pub mod libc_compat {
         pub use tikv_jemalloc_sys::{free, malloc, realloc};
     }
+
+    /// brow (phase 6.2): jemalloc residency tuning (see crate-level docs).
+    ///
+    /// - `background_thread=true`: an internal jemalloc thread purges
+    ///   decayed pages even when the allocating threads go idle.
+    /// - `dirty_decay_ms=5000`, `muzzy_decay_ms=5000`: freed pages become
+    ///   purgeable after 5 s instead of the 10 s defaults, halving the
+    ///   window dirty memory is pinned.
+    ///
+    /// Values are applied best-effort: a mallctl failure (unsupported
+    /// option on the linked jemalloc build) is logged and skipped — the
+    /// defaults are never worse than upstream behavior.
+    pub fn tune_residency() {
+        fn set_bool(name: &CStr, value: bool) {
+            let mut old: bool = false;
+            let mut old_len = size_of_val(&old);
+            let new: [u8; 1] = [value as u8];
+            let rv = unsafe {
+                mallctl(
+                    name.as_ptr(),
+                    (&raw mut old).cast(),
+                    &mut old_len,
+                    new.as_ptr().cast(),
+                    size_of_val(&new),
+                )
+            };
+            if rv != 0 {
+                log::warn!("jemalloc mallctl({name:?}, {value}) failed: {rv}");
+            }
+        }
+        fn set_size_t(name: &CStr, value: usize) {
+            let mut old: usize = 0;
+            let mut old_len = size_of_val(&old);
+            let new: usize = value;
+            let rv = unsafe {
+                mallctl(
+                    name.as_ptr(),
+                    (&raw mut old).cast(),
+                    &mut old_len,
+                    (&raw const new).cast(),
+                    size_of_val(&new),
+                )
+            };
+            if rv != 0 {
+                log::warn!("jemalloc mallctl({name:?}, {value}) failed: {rv}");
+            } else {
+                log::debug!("jemalloc {name:?} set to {value} (was {old})");
+            }
+        }
+
+        set_bool(c"background_thread", true);
+        set_size_t(c"dirty_decay_ms", 5000);
+        set_size_t(c"muzzy_decay_ms", 5000);
+    }
 }
 
 // brow: mimalloc platform module. mimalloc's tight size-class spacing and
@@ -233,6 +304,12 @@ mod platform {
     pub mod libc_compat {
         pub use libmimalloc_sys::{mi_free as free, mi_malloc as malloc, mi_realloc as realloc};
     }
+
+    /// brow (phase 6.2): mimalloc already releases pages eagerly (tight
+    /// size classes, short purge delay — the reason this backend exists),
+    /// and `libmimalloc-sys` does not bind the option setters, so there is
+    /// nothing to tune here. No-op by design.
+    pub fn tune_residency() {}
 }
 
 #[cfg(all(
@@ -276,6 +353,9 @@ mod platform {
     pub fn heap_reports() -> Vec<crate::HeapReport> {
         Vec::new()
     }
+
+    /// brow (phase 6.2): the System allocator has no runtime tuning knobs.
+    pub fn tune_residency() {}
 }
 
 #[cfg(windows)]
@@ -309,4 +389,9 @@ mod platform {
     pub fn heap_reports() -> Vec<crate::HeapReport> {
         Vec::new()
     }
+
+    /// brow (phase 6.2): the Windows HeapAlloc-based System allocator has
+    /// no useful runtime tuning knobs (LFH sizing is process-wide and
+    /// heuristic). No-op by design.
+    pub fn tune_residency() {}
 }

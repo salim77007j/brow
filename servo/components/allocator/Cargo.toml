@@ -13,7 +13,7 @@ description.workspace = true
 path = "lib.rs"
 
 [features]
-allocation-tracking = ["backtrace", "dep:rustc-hash", "log"]
+allocation-tracking = ["backtrace", "dep:rustc-hash"]
 use-jemalloc = ["dep:tikv-jemalloc-sys", "dep:tikv-jemallocator"]
 # brow: mimalloc global allocator — smaller RSS for many-small-object browser
 # workloads. Mutually exclusive with use-jemalloc (compile_error if both).
@@ -21,7 +21,7 @@ use-mimalloc = ["dep:libmimalloc-sys"]
 
 [dependencies]
 backtrace = { workspace = true, optional = true }
-log = { workspace = true, optional = true }
+log = { workspace = true }
 rustc-hash = { workspace = true, optional = true }
 
 [lints]

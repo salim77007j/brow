@@ -142,7 +142,24 @@ impl App {
                 .map(ServoshellGamepadDelegate::new)
                 .map(Rc::new),
         ));
-        running_state.open_window(platform_window, self.initial_url.as_url().clone());
+        let window =
+            running_state.open_window(platform_window, self.initial_url.as_url().clone());
+
+        // brow (phase 6.8): additional startup URLs open as background tabs
+        // in the same window (browser-standard multi-URL CLI behavior; the
+        // input of the multi-tab memory gate). The FIRST url stays the
+        // active tab — extras are hidden and throttled exactly like tabs
+        // the user backgrounded (phase 3 resource strategy).
+        for tab_url in &self.servoshell_preferences.startup_tabs {
+            let Ok(url) = Url::parse(tab_url) else {
+                log::warn!("brow: ignoring invalid startup tab URL: {tab_url}");
+                continue;
+            };
+            let webview = window.create_toplevel_webview(running_state.clone(), url);
+            webview.hide();
+            webview.set_throttled(true);
+            log::info!("brow: opened startup background tab: {tab_url}");
+        }
 
         self.state = AppState::Running(running_state);
     }

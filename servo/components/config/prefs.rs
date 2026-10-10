@@ -597,10 +597,17 @@ impl Preferences {
             // See https://github.com/servo/servo/issues/47577
             js_mem_gc_compacting_enabled: false,
             js_mem_gc_empty_chunk_count_min: 1,
-            js_mem_gc_high_frequency_heap_growth_max: 300,
-            js_mem_gc_high_frequency_heap_growth_min: 150,
-            js_mem_gc_high_frequency_high_limit_mb: 500,
-            js_mem_gc_high_frequency_low_limit_mb: 100,
+            // brow (phase 6.5): heap-frequency bands tightened for a
+            // lightweight browser. Firefox-equivalent bands (100/500, growth
+            // 150-300) let a runaway JS heap pin ~1 GB per content process
+            // before GC pressure ever rises. 32/128 with 120-200 % growth
+            // keeps interactive heaps in the same regime while GC starts
+            // resisting growth much earlier. Behavior-safe: these tune WHEN
+            // GC runs, not what it collects.
+            js_mem_gc_high_frequency_heap_growth_max: 200,
+            js_mem_gc_high_frequency_heap_growth_min: 120,
+            js_mem_gc_high_frequency_high_limit_mb: 128,
+            js_mem_gc_high_frequency_low_limit_mb: 32,
             js_mem_gc_high_frequency_time_limit_ms: 1000,
             js_mem_gc_incremental_enabled: false,
             js_mem_gc_incremental_slice_ms: 10,
@@ -608,7 +615,14 @@ impl Preferences {
             js_mem_gc_per_zone_enabled: false,
             js_mem_gc_zeal_frequency: 100,
             js_mem_gc_zeal_level: 0,
-            js_mem_max: -1,
+            // brow (phase 6.5): was -1 → JSGC_MAX_BYTES = u32::MAX
+            // (unbounded). 255 MB is a leak guard, not a steady-state cap:
+            // real-world interactive JS heaps sit far below it, but a site
+            // with a runaway allocation loop now triggers continuous GC
+            // instead of pinning memory until the OS kills the process.
+            // NOTE: in_range(val, 1, 0x100) is EXCLUSIVE of 256 — 256 would
+            // silently fall back to u32::MAX, so the in-band max is 255.
+            js_mem_max: 255,
             js_native_regex_enabled: true,
             js_offthread_compilation_enabled: true,
             js_timers_minimum_duration: 1000,
@@ -658,7 +672,12 @@ impl Preferences {
             network_http_proxy_uri: String::new(),
             network_https_proxy_uri: String::new(),
             network_http_no_proxy: String::new(),
-            network_http_cache_size: 5000,
+            // brow (phase 6.4): memory cache entry budget was 5000 — every
+            // response body of a long session is pinned in RAM until the
+            // cap is hit. 2000 entries still covers a heavy browsing
+            // session (the disk cache is the real store; the memory cache
+            // is only the hot layer).
+            network_http_cache_size: 2000,
             network_local_directory_listing_enabled: true,
             network_privacy_filter_enabled: true,
             network_privacy_filter_list_path: String::new(),

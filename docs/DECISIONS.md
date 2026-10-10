@@ -475,3 +475,30 @@ set unconditionally.
 residual risk is immature-service-worker/WebGL2 paths — covered by the
 CI panic gate (phase 5.5 matrix); any panic flips back the offending
 pref with evidence.
+
+## D-019 — Phase 6 memory levers: allocator residency tune + heap bounds + multi-URL CLI (phase 6.2/6.4/6.5/6.8)
+
+**Decision** (2026-10-10, phase 6): four levers applied without changing
+application behavior: (1) jemalloc residency tune
+(`allocator::tune_residency()` — `background_thread=true`,
+`dirty_decay_ms=5000`, `muzzy_decay_ms=5000`; called in chrome AND
+content processes; no-op on Windows/System-allocator builds). (2) JS
+heap bounds: `js_mem_max -1→255` (leak guard; the engine's `in_range`
+band is EXCLUSIVE of 256 — 256 would have silently stayed unbounded),
+heap-frequency bands 100/500→32/128 MB, growth 150-300→120-200 %.
+(3) HTTP memory cache 5000→2000 entries. (4) Multiple positional URL
+arguments open multiple tabs (first = active, extras hidden+throttled)
+— browser-standard CLI, and the input of the new CI 5-tab memory gate.
+mimalloc stays available but NOT switched to: no owner-hardware evidence
+yet, and the jemalloc tune is the well-understood first step.
+
+**Why**: run #88 baseline (software GL, `pgrep -f` sampling) showed
+380-1188 MB process-tree RSS. The sampler was unfaithful (leftover
+processes poisoned later sites — fixed with setsid+PGID scoping) and
+jemalloc shipped with `background_thread=false`, pinning freed pages
+indefinitely at browser steady state.
+
+**Consequence**: measured before/after numbers land in the phase 6
+report (6.9). The <100 MB/tab target stays subject to honest floor
+assessment (R-06); the 5-tab steady-state number is the renegotiation
+input. Image-cache byte budget (6.3) decides on these numbers.

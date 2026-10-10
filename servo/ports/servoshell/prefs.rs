@@ -59,6 +59,9 @@ pub(crate) static EXPERIMENTAL_PREFS: &[&str] = &[
 pub(crate) struct ServoShellPreferences {
     /// A URL to load when starting servoshell.
     pub url: Option<String>,
+    /// brow (phase 6.8): extra startup URLs — each opens as one background
+    /// tab in the first window (multi-URL CLI; multi-tab memory gate input).
+    pub startup_tabs: Vec<String>,
     /// An override value for the device pixel ratio.
     pub device_pixel_ratio_override: Option<f32>,
     /// Whether or not to attempt clean shutdown.
@@ -123,6 +126,7 @@ impl Default for ServoShellPreferences {
             searchpage: "https://duckduckgo.com/html/?q=%s".into(),
             tracing_filter: None,
             url: None,
+            startup_tabs: Vec::new(),
             output_image_path: None,
             exit_after_stable_image: false,
             userscripts_directory: None,
@@ -375,7 +379,7 @@ fn map_debug_options(arg: String) -> Vec<String> {
 }
 
 #[derive(Bpaf, Clone, Debug)]
-#[bpaf(options, version(VERSION), usage("servoshell [OPTIONS] URL"))]
+#[bpaf(options, version(VERSION), usage("servoshell [OPTIONS] [URL] ..."))]
 // Newlines in comments are intentional to have the right formatting for the help message.
 struct CmdArgs {
     /// Background Hang Monitor enabled.
@@ -579,6 +583,11 @@ struct CmdArgs {
     /// The url we should load.
     #[bpaf(positional("URL"), fallback(String::from("https://www.servo.org")))]
     url: String,
+    /// brow (phase 6.8): additional URLs — each opens as one background
+    /// tab at startup (browser-standard CLI behavior: multiple URL
+    /// arguments = multiple tabs). Also the multi-tab memory gate input.
+    #[bpaf(positional("EXTRA_URLS"), many)]
+    extra_urls: Vec<String>,
 }
 
 fn update_preferences_from_command_line_arguments(
@@ -708,6 +717,7 @@ fn parse_arguments_helper(args_without_binary: Args) -> ArgumentParsingResult {
 
     let servoshell_preferences = ServoShellPreferences {
         url: Some(cmd_args.url),
+        startup_tabs: cmd_args.extra_urls,
         no_native_titlebar: cmd_args.no_native_titlebar,
         device_pixel_ratio_override: cmd_args.device_pixel_ratio,
         clean_shutdown: cmd_args.clean_shutdown,

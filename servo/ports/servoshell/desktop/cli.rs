@@ -20,6 +20,9 @@ pub fn main() {
 pub(crate) fn run_from_args(args: Vec<String>) {
     crate::crash_handler::install();
     crate::init_crypto();
+    // brow (phase 6.2): chrome process residency tune. Content processes
+    // are tuned in their branch below (they hold the DOM/JS/images).
+    servo_allocator::tune_residency();
 
     // TODO: once log-panics is released, can this be replaced by
     // log_panics::init()?
@@ -28,6 +31,10 @@ pub(crate) fn run_from_args(args: Vec<String>) {
     let (mut opts, mut preferences, mut servoshell_preferences) =
         match parse_command_line_arguments(&*args) {
             ArgumentParsingResult::ContentProcess(token) => {
+                // brow (phase 6.2): content processes hold the DOM, JS heaps
+                // and image buffers — the allocator residency tune matters
+                // most here (jemalloc background purge of decayed pages).
+                servo_allocator::tune_residency();
                 return servo::run_content_process(token);
             },
             ArgumentParsingResult::ChromeProcess(opts, preferences, servoshell_preferences) => {

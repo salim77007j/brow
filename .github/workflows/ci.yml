@@ -504,16 +504,20 @@ jobs:
           for entry in $sites; do
             name="${entry%%:*}"; url="${entry#*:}"
             log="$RUNNER_TEMP/phase5/site-$name.log"
-            XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-$name" timeout 60 \
+            # brow 6.8: setsid gives this run its own process GROUP; the
+            # sampler below walks only that group. The old `pgrep -f
+            # servoshell` matched leftover processes from earlier sites
+            # (a timed-out site poisoned every later sample).
+            XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-$name" setsid timeout 60 \
               ./target/production-stripped/servoshell -z -o "$RUNNER_TEMP/phase5/site-$name.png" "$url" >"$log" 2>&1 &
             SPID=$!
-            # Peak RSS across the whole process TREE (servo is
-            # multiprocess — content processes count). Sample while alive.
+            # Peak RSS across the launched process group only (servo is
+            # multiprocess — content processes inherit the group).
             max_rss=0
             for i in $(seq 1 26); do
               kill -0 $SPID 2>/dev/null || break
               tree=0
-              for p in $(pgrep -f "servoshell"); do
+              for p in $(pgrep -g "$SPID"); do
                 kb=$(awk '/VmRSS/{print $2}' "/proc/$p/status" 2>/dev/null || echo 0)
                 tree=$((tree + kb))
               done
@@ -530,6 +534,48 @@ jobs:
             echo "--- $name: panics=$panics js_errors=$jserrs rss_peak=$((max_rss / 1024))MB screenshot=$shot"
           done
           cat "$RUNNER_TEMP/phase5/matrix.md" | tee -a "$GITHUB_STEP_SUMMARY"
+
+          # brow phase 6.8: multi-tab memory gate — 5 real sites in one
+          # window (1 active + 4 hidden+throttled background tabs, the
+          # browser-standard multi-URL CLI). PGID-scoped tree sampling.
+          tab_urls="https://example.com https://en.wikipedia.org/wiki/Main_Page https://news.ycombinator.com https://www.w3.org/Style/CSS https://xkcd.com"
+          multilog="$RUNNER_TEMP/phase5/multitab.log"
+          XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-multitab" setsid timeout 120 \
+            ./target/production-stripped/servoshell -z $tab_urls >"$multilog" 2>&1 &
+          MPID=$!
+          max_rss=0; last_rss=0
+          for i in $(seq 1 40); do
+            kill -0 $MPID 2>/dev/null || break
+            tree=0
+            for p in $(pgrep -g "$MPID"); do
+              kb=$(awk '/VmRSS/{print $2}' "/proc/$p/status" 2>/dev/null || echo 0)
+              tree=$((tree + kb))
+            done
+            [ "$tree" -gt "$max_rss" ] && max_rss=$tree
+            last_rss=$tree
+            sleep 3
+          done
+          wait $MPID 2>/dev/null || true
+          mpanics=$(grep -c "panicked\|assertion failed" "$multilog" || true)
+          mjerrs=$(grep -ciE "SecurityError|ReferenceError|TypeError:|SyntaxError" "$multilog" || true)
+          echo "--- multitab: panics=$mpanics js_errors=$mjerrs rss_peak=$((max_rss / 1024))MB rss_steady=$((last_rss / 1024))MB"
+          {
+            echo ""
+            echo "### Multi-tab memory (5 sites, 1 window, software GL)"
+            echo ""
+            echo "| metric | value |"
+            echo "|---|---|"
+            echo "| peak tree RSS MB | $((max_rss / 1024)) |"
+            echo "| last-sample tree RSS MB | $((last_rss / 1024)) |"
+            echo "| panics | $mpanics |"
+            echo "| JS console errors | $mjerrs |"
+          } >> "$RUNNER_TEMP/phase5/matrix.md"
+          cp "$multilog" "$GITHUB_WORKSPACE/docs/evidence/phase5/phase5-multitab.log"
+          if [ "$mpanics" != "0" ]; then
+            echo "::error::Multi-tab run panicked — see docs/evidence/phase5/phase5-multitab.log"
+            exit 1
+          fi
+
           mkdir -p "$GITHUB_WORKSPACE/docs/evidence/phase5"
           cp "$RUNNER_TEMP/phase5/phase5-api-audit.json" "$GITHUB_WORKSPACE/docs/evidence/phase5/" 2>/dev/null || true
           cp "$RUNNER_TEMP/phase5/"*.png "$GITHUB_WORKSPACE/docs/evidence/phase5/" 2>/dev/null || true
