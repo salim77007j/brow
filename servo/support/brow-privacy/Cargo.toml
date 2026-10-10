@@ -30,6 +30,9 @@ brow-debug-decisions = []
 
 [dev-dependencies]
 criterion = { workspace = true }
+# brow (7.2): the score rubric asserts the compiled-in engine defaults
+# (DoH on, https templates) through the live pref store.
+servo-config = { workspace = true }
 
 [[bench]]
 name = "match_bench"

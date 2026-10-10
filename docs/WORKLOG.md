@@ -1125,3 +1125,13 @@ feeds the honest floor assessment for the <100 MB/tab target.
   NOTE: byte-level tool-read mangling ([h sequences) produced a false
   "corrupted test file" alarm — od -c showed the file was always valid;
   CI's green privacy job was correct. Use od for byte truth.
+
+- **7.2 + 7.8** privacy score rubric (tests/score_rubric.rs): 10 line
+  items, weights = 100, every point a real assertion against the
+  production engine (4-list stack, chips receive/send, CNAME detector,
+  DoH pref defaults, fingerprint payload tiers, session keys, stats
+  persistence). Emits BROW_PRIVACY_SCORE_JSON; the test asserts >= 90
+  and a CI step (pipefail-guarded) prints the JSON into the job summary
+  and fails if the record is missing. servo-config added as a
+  brow-privacy dev-dep for pref-default assertions (static const_default
+  init — safe in bare tests).

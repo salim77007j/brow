@@ -107,6 +107,16 @@ jobs:
       - name: Unit + integration tests (real EasyList snapshot, cross-module flows)
         run: cargo test -p brow-privacy --locked || cargo test -p brow-privacy
 
+      - name: brow 7.8 — privacy score gate (rubric, >= 90/100)
+        run: |
+          set -o pipefail
+          cargo test -p brow-privacy --test score_rubric -- --nocapture 2>&1 | tee /tmp/score.log
+          grep "BROW_PRIVACY_SCORE_JSON" /tmp/score.log | tee -a "$GITHUB_STEP_SUMMARY"
+          # the test itself asserts >= 90; this grep guarantees the JSON
+          # evidence line was emitted (no silent skip).
+          grep -q "BROW_PRIVACY_SCORE_JSON" /tmp/score.log || {
+            echo "::error::privacy score rubric did not emit its JSON record"; exit 1; }
+
       - name: Decision throughput + engine build benchmarks (criterion, smoke)
         # Target the criterion bench explicitly: bare `cargo bench -p ... -- <flags>`
         # also runs the lib unittests harness, which rejects criterion-only options
