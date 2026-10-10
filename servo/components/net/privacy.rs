@@ -199,7 +199,10 @@ impl PrivacyState {
                     },
                 }
             })
-            .as_ref()
+            // brow (7.3): the lock holds Option<&'static FilterEngine> —
+            // deref-COPY the inner value out (Option<&T> is Copy), so the
+            // return is Option<&FilterEngine> without a double reference.
+            .map(|opt| *opt)
     }
 
     /// The site origin for `$domain=` / party evaluation: the client origin
