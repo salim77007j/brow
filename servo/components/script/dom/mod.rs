@@ -274,8 +274,9 @@ pub(crate) use self::globalscope::*;
 pub(crate) mod html;
 pub(crate) use self::html::*;
 // brow (phase5.1-c): requestIdleCallback / IdleDeadline.
+// No glob re-export (phase 9.1): all users import via the direct module
+// path `crate::dom::idledeadline::…`, so the re-export is dead code.
 pub(crate) mod idledeadline;
-pub(crate) use self::idledeadline::*;
 pub(crate) mod indexeddb;
 pub(crate) use self::indexeddb::*;
 pub(crate) mod intersectionobserver;

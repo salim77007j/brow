@@ -15,6 +15,10 @@
 
 /// UTC timestamp from the Unix epoch, formatted `YYYY-MM-DDTHH:MM:SSZ`.
 /// Pure function so it can be unit-tested on every platform.
+/// Windows-only callers (crash report writer); kept under `cfg(test)` so
+/// the unit tests still run on every platform without dead-code warnings
+/// on non-Windows builds (phase 9.1).
+#[cfg(any(target_os = "windows", test))]
 pub(crate) fn format_utc_timestamp(epoch_secs: u64) -> String {
     let days = epoch_secs / 86_400;
     let secs_of_day = epoch_secs % 86_400;
@@ -32,6 +36,7 @@ pub(crate) fn format_utc_timestamp(epoch_secs: u64) -> String {
 
 /// Howard Hinnant's `civil_from_days` (public domain): converts days since
 /// 1970-01-01 to a proleptic Gregorian (year, month, day) without a date library.
+#[cfg(any(target_os = "windows", test))]
 fn civil_from_days(days_since_epoch: i64) -> (i64, u32, u32) {
     let z = days_since_epoch + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
@@ -76,16 +81,12 @@ pub(crate) fn crash_log_dir() -> Option<std::path::PathBuf> {
 }
 
 /// Append a timestamped note (build identity, GL driver strings, …) to the
-/// persistent crash log. No-op when crash capture is unavailable.
+/// persistent crash log. Windows-only (phase 9.1): the persistent crash log
+/// itself is a Windows feature and the sole caller (gui.rs GL driver note)
+/// sits inside a cfg(windows) block.
+#[cfg(target_os = "windows")]
 pub(crate) fn log_startup_note(note: &str) {
-    #[cfg(target_os = "windows")]
-    {
-        imp::log_startup_note(note);
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = note;
-    }
+    imp::log_startup_note(note);
 }
 
 #[cfg(target_os = "windows")]

@@ -1888,7 +1888,9 @@ impl WindowMethods<crate::DomTypeHolder> for Window {
                 if let Some(callback) = pending {
                     let deadline =
                         IdleDeadline::new(&this, cx, CrossProcessInstant::now(), false);
-                    callback.Call__(cx, &deadline, ExceptionHandling::Report);
+                    // brow (phase 9.1): Err means the callback threw — the
+                    // exception is already reported via ExceptionHandling::Report.
+                    let _ = callback.Call__(cx, &deadline, ExceptionHandling::Report);
                 }
             }));
         handle
