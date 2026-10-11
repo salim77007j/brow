@@ -33,6 +33,11 @@ jobs:
         san: [address, thread]
     env:
       RUSTFLAGS: -Zsanitizer=${{ matrix.san }}
+      # brow (phase 9.2 fix): servo/rust-toolchain.toml pins stable 1.97.1 and
+      # rustup honors it for everything under servo/, overriding the default
+      # toolchain — RUSTUP_TOOLCHAIN is the documented override that wins over
+      # the directory pin, keeping -Zsanitizer (nightly-only) usable.
+      RUSTUP_TOOLCHAIN: nightly
       # Leak detection off under ASan: the Rust test harness intentionally
       # leaks some process-lifetime allocations, which floods the report.
       # Definite-leak triage is the Valgrind job's mandate (same phase).
@@ -41,6 +46,10 @@ jobs:
     steps:
       - name: Checkout brow (with vendored servo/)
         uses: actions/checkout@v4
+        with:
+          # nightly schedules fire from the default branch; always build
+          # the working branch regardless of where the run is triggered
+          ref: v0.7-rebuild
 
       - name: Install nightly toolchain (-Zsanitizer is nightly-only)
         run: |
@@ -61,6 +70,10 @@ jobs:
     steps:
       - name: Checkout brow (with vendored servo/)
         uses: actions/checkout@v4
+        with:
+          # nightly schedules fire from the default branch; always build
+          # the working branch regardless of where the run is triggered
+          ref: v0.7-rebuild
 
       - name: Install Rust toolchain (pinned by servo/rust-toolchain.toml)
         run: |
