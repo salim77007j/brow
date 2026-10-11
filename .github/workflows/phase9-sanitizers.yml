@@ -1,0 +1,101 @@
+name: brow Phase 9 — sanitizers (ASan / TSan / Valgrind)
+
+# brow (phase 9.2): memory-safety verification of the security-critical
+# brow crates (filter-list engine, network core, disk cache, shell core —
+# all pure Rust, no mozjs FFI).
+#
+# - ASan: heap/stack/UB memory errors, nightly -Zsanitizer=address.
+# - TSan: data races and deadlocks, nightly -Zsanitizer=thread.
+# - Valgrind (pinned stable toolchain): definite-leak + invalid-access
+#   triage on the filter engine and cache crates.
+#
+# Not on push (sanitizer builds recompile all deps per leg); manual
+# dispatch after engine-affecting phases and weekly.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * 1" # weekly, Monday 04:00 UTC
+
+concurrency:
+  group: phase9-sanitizers
+  cancel-in-progress: true
+
+jobs:
+  asan-tsan:
+    name: ${{ matrix.san }} — ${{ matrix.crate }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: [brow-privacy, brow-net-core, brow-cache, brow-shell-core]
+        san: [address, thread]
+    env:
+      RUSTFLAGS: -Zsanitizer=${{ matrix.san }}
+      # Leak detection off under ASan: the Rust test harness intentionally
+      # leaks some process-lifetime allocations, which floods the report.
+      # Definite-leak triage is the Valgrind job's mandate (same phase).
+      ASAN_OPTIONS: detect_leaks=0:detect_stack_use_after_return=1
+      TSAN_OPTIONS: halt_on_error=0:second_deadlock_stack=1
+    steps:
+      - name: Checkout brow (with vendored servo/)
+        uses: actions/checkout@v4
+
+      - name: Install nightly toolchain (-Zsanitizer is nightly-only)
+        run: |
+          rustup toolchain install nightly --profile minimal
+          rustup default nightly
+          rustc --version
+
+      - name: Test ${{ matrix.crate }} under ${{ matrix.san }}
+        run: |
+          cd servo
+          cargo test -p ${{ matrix.crate }} --locked
+          echo "${{ matrix.san }}: no sanitizer errors in ${{ matrix.crate }}"
+
+  valgrind:
+    name: Valgrind — brow-privacy + brow-cache
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout brow (with vendored servo/)
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (pinned by servo/rust-toolchain.toml)
+        run: |
+          rustup toolchain install $(awk -F'"' '/channel =/ {print $2}' rust-toolchain.toml) --profile minimal
+          rustup default $(awk -F'"' '/channel =/ {print $2}' rust-toolchain.toml)
+
+      - name: Install Valgrind
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y valgrind
+
+      - name: Build test binaries (debug, uninstrumented)
+        run: |
+          cd servo
+          cargo test -p brow-privacy -p brow-cache --locked --no-run --message-format=json \
+            | jq -r 'select(.executable != null) | .executable' > /tmp/test-bins.txt
+          cat /tmp/test-bins.txt
+
+      - name: Run each test binary under Valgrind
+        run: |
+          set -e
+          FAIL=0
+          while read -r bin; do
+            [ -z "$bin" ] && continue
+            echo "=== valgrind $bin"
+            # definite leaks only: indirect/possible leaks are endemic to
+            # long-lived test-harness allocations and are triaged separately
+            if ! valgrind --quiet --error-exitcode=99 \
+                 --leak-check=full --errors-for-leak-kinds=definite \
+                 --log-file=/tmp/vg-$(basename "$bin").log "$bin"; then
+              echo "::error::Valgrind errors in $bin (see log below)"
+              tail -80 "/tmp/vg-$(basename "$bin").log"
+              FAIL=1
+            else
+              echo "clean: $bin"
+            fi
+          done < /tmp/test-bins.txt
+          exit $FAIL
