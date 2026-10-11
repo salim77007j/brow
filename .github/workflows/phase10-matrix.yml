@@ -27,6 +27,10 @@ jobs:
     steps:
       - name: Checkout brow (with vendored servo/)
         uses: actions/checkout@v4
+        with:
+          # nightly schedules fire from the default branch; always build
+          # the working branch regardless of where the run is triggered
+          ref: v0.7-rebuild
 
       - name: Free disk space for the build tree
         run: |
