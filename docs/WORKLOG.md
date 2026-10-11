@@ -1231,3 +1231,35 @@ brow-shell-core — pure-Rust crates, nightly -Zsanitizer) plus a
 Valgrind job (pinned stable toolchain, definite-leak gate over the
 test binaries located via cargo --message-format=json). Manual
 dispatch + weekly; not on push (sanitizer builds recompile deps).
+
+## Phase 10 (2026-10-11) — 50/50 matrix green, sanitizer suite green, final report
+
+**50-site matrix run #2 (38152812183, 5c7154cb7): ALL 50 SITES OK —
+0 panics, 0 JS console errors.** 30/50 screenshots (no-shot = heavy
+SPAs exceeding the fixed snapshot window; pages still loaded and ran
+clean — evidence-quality note, not a failure). RSS 351 MB (chatgpt —
+the owner-reported int32 site, now clean) to 2223 MB (dribbble,
+image-heavy under software GL). Median ≈ 660 MB.
+
+**Sanitizer suite (phase 9.2) after 8 evidence-driven iterations —
+ALL GREEN (run #8, 163c229c2)**: ASan 4/4 crates, TSan 4/4 (scoped
+suppression for tokio::runtime::io readiness false-positive class,
+documented), Valgrind definite-leak gate clean with full vg logs
+archived. Iteration chain (each fixed from the previous run's log):
+RUSTUP_TOOLCHAIN pin override → --target for -Zsanitizer →
+-Cunsafe-allow-abi-mismatch → -Zbuild-std (cargo flag, not RUSTFLAGS)
+→ --tests (doctests can't link build-std) → --skip after -- separator
+→ valgrind targeted grep + artifacts. The uninstrumented-std TSan hit
+on dedup.rs was proven a false positive by code reading (mutex held on
+every access) and eliminated by instrumenting std, not by suppressing
+brow code.
+
+Matrix workflow fixes from run #1: uv install + mach bootstrap
+(exact ci.yml recipe), checkout pinned ref. All workflow recipes
+synced to main (87984d912) so nightly schedules execute the proven
+versions against v0.7-rebuild.
+
+PHASE10_REPORT.md: the phase 5-10 final report — 4 owner errors
+fixed+verified, 50/50 matrix table, privacy rubric ≥90, platform/IME
+audits, sanitizer suite, memory floor honesty, deliverables, known
+limits. This is the commit the "Everything is fixed" notice rides on.
