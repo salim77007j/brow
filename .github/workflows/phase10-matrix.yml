@@ -43,6 +43,12 @@ jobs:
           rustup toolchain install $(awk -F'"' '/channel =/ {print $2}' rust-toolchain.toml) --profile minimal
           rustup default $(awk -F'"' '/channel =/ {print $2}' rust-toolchain.toml)
 
+      - name: Install uv (required by mach's Python environment management)
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          uv --version
+
       - name: Install headless compile prerequisites
         run: |
           sudo apt-get update
@@ -50,6 +56,13 @@ jobs:
             libx11-dev libfontconfig1-dev libgl1-mesa-dev libgles2-mesa-dev \
             libegl1-mesa-dev libosmesa6-dev libharfbuzz-dev libdbus-1-dev \
             libwebp-dev libunwind-dev xvfb imagemagick
+
+      # Same recipe as ci.yml's Linux build job: mach bootstrap installs the
+      # media stack (gstreamer dev libs) and everything else servoshell links.
+      - name: Servo build dependencies (mach bootstrap)
+        run: |
+          cd servo
+          ./mach bootstrap
 
       - name: Build servoshell (production-stripped, LTO — D-015)
         run: |
