@@ -55,12 +55,16 @@ jobs:
         run: |
           rustup toolchain install nightly --profile minimal
           rustup default nightly
+          rustup target add x86_64-unknown-linux-gnu --toolchain nightly
           rustc --version
 
       - name: Test ${{ matrix.crate }} under ${{ matrix.san }}
         run: |
           cd servo
-          cargo test -p ${{ matrix.crate }} --locked
+          # --target is REQUIRED with -Zsanitizer (run #2 evidence: without
+          # it cargo mixes host/target units -> "ABI mismatch in crate
+          # build_script_build"); host units then build uninstrumented.
+          cargo test -p ${{ matrix.crate }} --locked --target x86_64-unknown-linux-gnu
           echo "${{ matrix.san }}: no sanitizer errors in ${{ matrix.crate }}"
 
   valgrind:
