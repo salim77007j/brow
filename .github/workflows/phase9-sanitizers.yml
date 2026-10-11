@@ -32,6 +32,12 @@ jobs:
         crate: [brow-privacy, brow-net-core, brow-cache, brow-shell-core]
         san: [address, thread]
     env:
+      # rustc hint from run #3 + run #4 evidence: with uninstrumented
+      # precompiled std, TSan cannot see std::sync::Mutex's futex acquire
+      # edges and reports false data races on correctly-locked code
+      # (dedup.rs:83 DedupPool::get). -Zbuild-std rebuilds std instrumented
+      # — the fully-supported sanitizer configuration — which also removes
+      # the ABI-mismatch mixing error entirely.
       RUSTFLAGS: -Zsanitizer=${{ matrix.san }}
       # brow (phase 9.2 fix): servo/rust-toolchain.toml pins stable 1.97.1 and
       # rustup honors it for everything under servo/, overriding the default
@@ -42,7 +48,11 @@ jobs:
       # leaks some process-lifetime allocations, which floods the report.
       # Definite-leak triage is the Valgrind job's mandate (same phase).
       ASAN_OPTIONS: detect_leaks=0:detect_stack_use_after_return=1
-      TSAN_OPTIONS: halt_on_error=0:second_deadlock_stack=1
+      # run #6 evidence: tokio 1.53.1's I/O driver readiness bit-packing
+      # (ScheduledIo::set_readiness/wake) trips TSan's model — a known
+      # third-party false-positive class (tokio's own CI suppresses it).
+      # Scoped to tokio's io module only; brow code stays fully gated.
+      TSAN_OPTIONS: halt_on_error=0:second_deadlock_stack=1:suppressions=/tmp/tsan.supp
     steps:
       - name: Checkout brow (with vendored servo/)
         uses: actions/checkout@v4
@@ -53,7 +63,7 @@ jobs:
 
       - name: Install nightly toolchain (-Zsanitizer is nightly-only)
         run: |
-          rustup toolchain install nightly --profile minimal
+          rustup toolchain install nightly --profile minimal -c rust-src
           rustup default nightly
           rustup target add x86_64-unknown-linux-gnu --toolchain nightly
           rustc --version
@@ -61,10 +71,27 @@ jobs:
       - name: Test ${{ matrix.crate }} under ${{ matrix.san }}
         run: |
           cd servo
+          # TSan suppressions for the known tokio I/O-driver false positive
+          # class (run #6 evidence); everything else races are gated.
+          if [ "${{ matrix.san }}" = "thread" ]; then
+            printf 'race:tokio::runtime::io\n' > /tmp/tsan.supp
+          fi
+          # --tests: doctests cannot link -Zbuild-std artifacts (run #6:
+          # 33/49 rustdoc errors in brow-cache/brow-shell-core doc legs)
+          # --skip engine_memory_budget: the RSS-delta budget is calibrated
+          # for uninstrumented builds; ASan redzones inflate it ~3x (run #6:
+          # 362 MB delta under address).
           # --target is REQUIRED with -Zsanitizer (run #2 evidence: without
           # it cargo mixes host/target units -> "ABI mismatch in crate
           # build_script_build"); host units then build uninstrumented.
-          cargo test -p ${{ matrix.crate }} --locked --target x86_64-unknown-linux-gnu
+          # -Zbuild-std is a CARGO flag (run #5 evidence: rustc rejects it
+          # in RUSTFLAGS) and must carry a value; std rebuilds instrumented.
+          # --skip is a LIBTEST harness flag (run #7 evidence: cargo rejects
+          # it as a cargo arg) -> must come after the -- separator; it
+          # filters the one ASan-inflated test in every test binary.
+          cargo test -p ${{ matrix.crate }} --locked --tests \
+            --target x86_64-unknown-linux-gnu -Zbuild-std=std \
+            -- --skip engine_memory_budget
           echo "${{ matrix.san }}: no sanitizer errors in ${{ matrix.crate }}"
 
   valgrind:
@@ -109,10 +136,20 @@ jobs:
                  --leak-check=full --errors-for-leak-kinds=definite \
                  --log-file=/tmp/vg-$(basename "$bin").log "$bin"; then
               echo "::error::Valgrind errors in $bin (see log below)"
-              tail -80 "/tmp/vg-$(basename "$bin").log"
+              grep -E "definitely lost|ERROR SUMMARY|Invalid|uninitialised" \
+                "/tmp/vg-$(basename "$bin").log" | head -20
               FAIL=1
             else
               echo "clean: $bin"
             fi
           done < /tmp/test-bins.txt
           exit $FAIL
+
+      - name: Upload Valgrind logs (full, on any outcome)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: valgrind-logs
+          path: /tmp/vg-*.log
+          retention-days: 14
+          if-no-files-found: warn
