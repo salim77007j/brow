@@ -86,9 +86,12 @@ jobs:
           # build_script_build"); host units then build uninstrumented.
           # -Zbuild-std is a CARGO flag (run #5 evidence: rustc rejects it
           # in RUSTFLAGS) and must carry a value; std rebuilds instrumented.
+          # --skip is a LIBTEST harness flag (run #7 evidence: cargo rejects
+          # it as a cargo arg) -> must come after the -- separator; it
+          # filters the one ASan-inflated test in every test binary.
           cargo test -p ${{ matrix.crate }} --locked --tests \
-            --skip engine_memory_budget \
-            --target x86_64-unknown-linux-gnu -Zbuild-std=std
+            --target x86_64-unknown-linux-gnu -Zbuild-std=std \
+            -- --skip engine_memory_budget
           echo "${{ matrix.san }}: no sanitizer errors in ${{ matrix.crate }}"
 
   valgrind:
