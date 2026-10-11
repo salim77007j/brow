@@ -38,7 +38,7 @@ jobs:
       # (dedup.rs:83 DedupPool::get). -Zbuild-std rebuilds std instrumented
       # — the fully-supported sanitizer configuration — which also removes
       # the ABI-mismatch mixing error entirely.
-      RUSTFLAGS: -Zsanitizer=${{ matrix.san }} -Zbuild-std
+      RUSTFLAGS: -Zsanitizer=${{ matrix.san }}
       # brow (phase 9.2 fix): servo/rust-toolchain.toml pins stable 1.97.1 and
       # rustup honors it for everything under servo/, overriding the default
       # toolchain — RUSTUP_TOOLCHAIN is the documented override that wins over
@@ -70,7 +70,9 @@ jobs:
           # --target is REQUIRED with -Zsanitizer (run #2 evidence: without
           # it cargo mixes host/target units -> "ABI mismatch in crate
           # build_script_build"); host units then build uninstrumented.
-          cargo test -p ${{ matrix.crate }} --locked --target x86_64-unknown-linux-gnu
+          # -Zbuild-std is a CARGO flag (run #5 evidence: rustc rejects it
+          # in RUSTFLAGS) and must carry a value; std rebuilds instrumented.
+          cargo test -p ${{ matrix.crate }} --locked --target x86_64-unknown-linux-gnu -Zbuild-std=std
           echo "${{ matrix.san }}: no sanitizer errors in ${{ matrix.crate }}"
 
   valgrind:
