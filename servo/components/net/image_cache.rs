@@ -145,6 +145,28 @@ fn set_webrender_image_key(
 /// <https://html.spec.whatwg.org/multipage/#list-of-available-images>
 type ImageKey = (ServoUrl, ImmutableOrigin, Option<CorsSettings>);
 
+/// brow (phase 6.3): encoded-byte budget over `completed_loads`. The image
+/// cache previously retained every completed image's bytes for the whole
+/// pipeline lifetime with no bound at all (PHASE6_PLAN.md research
+/// summary). 64 MB of encoded bytes is browser-typical; the decoded
+/// textures live in the compositor and are released through
+/// `ImageUpdate::DeleteImage` on eviction, so evicted images simply
+/// re-decode and re-upload on next use.
+const COMPLETED_LOADS_BYTE_BUDGET: usize = 64 * 1024 * 1024;
+
+/// brow (phase 6.3): the encoded-byte cost an entry contributes to the
+/// budget. Raster images retain their source bytes in the cache; vector
+/// images keep only the parsed tree (rasterized copies are bounded
+/// separately by their requested sizes); failures and metadata-only
+/// responses cost nothing.
+fn completed_load_cost(image_response: &ImageResponse) -> usize {
+    match image_response {
+        ImageResponse::Loaded(Image::Raster(image), _) => image.bytes.len(),
+        ImageResponse::Loaded(Image::Vector(_), _) | ImageResponse::MetadataLoaded(_) |
+        ImageResponse::FailedToLoadOrDecode => 0,
+    }
+}
+
 // Represents all the currently pending loads/decodings. For
 // performance reasons, loads are indexed by a dedicated load key.
 #[derive(MallocSizeOf)]
@@ -486,6 +508,12 @@ struct ImageCacheStore {
     /// Images that have finished loading (successful or not)
     completed_loads: HashMap<ImageKey, CompletedLoad>,
 
+    /// brow (phase 6.3): LRU order over `completed_loads` (front = oldest)
+    /// plus the running encoded-byte total used to enforce
+    /// `COMPLETED_LOADS_BYTE_BUDGET`.
+    completed_lru: VecDeque<ImageKey>,
+    completed_bytes: usize,
+
     /// Vector (e.g. SVG) images that have been sucessfully loaded and parsed
     /// but are yet to be rasterized. Since the same SVG data can be used for
     /// rasterizing at different sizes, we use this hasmap to share the data.
@@ -686,14 +714,22 @@ impl ImageCacheStore {
         };
 
         let completed_load = CompletedLoad::new(image_response.clone(), key);
-        self.completed_loads.insert(
-            (
-                pending_load.url,
-                pending_load.load_origin,
-                pending_load.cors_setting,
-            ),
-            completed_load,
+        // brow (phase 6.3): register the completed load in the LRU and
+        // enforce the encoded-byte budget.
+        let lru_key: ImageKey = (
+            pending_load.url,
+            pending_load.load_origin,
+            pending_load.cors_setting,
         );
+        if let Some(old) = self.completed_loads.get(&lru_key) {
+            self.completed_bytes = self
+                .completed_bytes
+                .saturating_sub(completed_load_cost(&old.image_response));
+        }
+        self.completed_bytes += completed_load_cost(&completed_load.image_response);
+        self.completed_loads.insert(lru_key.clone(), completed_load);
+        self.completed_lru.push_back(lru_key);
+        self.enforce_completed_load_budget();
 
         for listener in pending_load.listeners {
             listener.respond(image_response.clone());
@@ -716,6 +752,36 @@ impl ImageCacheStore {
                 self.webview_id.into(),
                 vec![ImageUpdate::DeleteImage(id)].into(),
             );
+        }
+    }
+
+    /// brow (phase 6.3): evict least-recently-used completed loads until the
+    /// retained encoded bytes fit the budget. Eviction reuses
+    /// `remove_loaded_image`, which also releases the compositor's image
+    /// key, so evicted images transparently re-decode-and-reupload on
+    /// next use.
+    fn enforce_completed_load_budget(&mut self) {
+        if self.completed_bytes <= COMPLETED_LOADS_BYTE_BUDGET {
+            return;
+        }
+        while self.completed_bytes > COMPLETED_LOADS_BYTE_BUDGET {
+            let Some(lru_key) = self.completed_lru.pop_front() else {
+                // Bookkeeping inconsistency (should be unreachable): reset
+                // the counter so the budget can re-arm from live entries.
+                self.completed_bytes = 0;
+                break;
+            };
+            if let Some(load) = self.completed_loads.get(&lru_key) {
+                let cost = completed_load_cost(&load.image_response);
+                self.completed_bytes = self.completed_bytes.saturating_sub(cost);
+                debug!(
+                    "brow 6.3: evicting completed image ({} encoded bytes) over budget",
+                    cost
+                );
+                self.remove_loaded_image(&lru_key.0, &lru_key.1, &lru_key.2);
+            }
+            // Keys absent from completed_loads are stale duplicates from a
+            // re-insert; their cost was already corrected at re-insert time.
         }
     }
 
@@ -754,17 +820,30 @@ impl ImageCacheStore {
     /// Return a completed image if it exists, or None if there is no complete load
     /// or the complete load is not fully decoded or is unavailable.
     fn get_completed_image_if_available(
-        &self,
+        &mut self,
         url: ServoUrl,
         origin: ImmutableOrigin,
         cors_setting: Option<CorsSettings>,
     ) -> Option<Result<(Image, ServoUrl), ()>> {
-        self.completed_loads
-            .get(&(url, origin, cors_setting))
-            .map(|completed_load| match &completed_load.image_response {
+        let key: ImageKey = (url, origin, cors_setting);
+        let result = self.completed_loads.get(&key).map(|completed_load| {
+            match &completed_load.image_response {
                 ImageResponse::Loaded(image, url) => Ok((image.clone(), url.clone())),
                 ImageResponse::FailedToLoadOrDecode | ImageResponse::MetadataLoaded(_) => Err(()),
-            })
+            }
+        });
+        // brow (phase 6.3): bump the accessed entry to the back of the LRU
+        // so repaint-heavy pages do not get their images evicted early.
+        if let Some(pos) = self.completed_lru.iter().position(|k| *k == key) {
+            if pos + 1 != self.completed_lru.len() {
+                let entry = self
+                    .completed_lru
+                    .remove(pos)
+                    .expect("position came from this deque");
+                self.completed_lru.push_back(entry);
+            }
+        }
+        result
     }
 
     /// Handle a message from one of the decoder worker threads or from a sync
@@ -836,6 +915,8 @@ impl ImageCacheFactory for ImageCacheFactoryImpl {
             store: Arc::new(Mutex::new(ImageCacheStore {
                 pending_loads: AllPendingLoads::new(),
                 completed_loads: HashMap::new(),
+                completed_lru: VecDeque::new(),
+                completed_bytes: 0,
                 vector_images: FxHashMap::default(),
                 rasterized_vector_images: FxHashMap::default(),
                 broken_image_icon_image: OnceCell::new(),
@@ -911,7 +992,7 @@ impl ImageCache for ImageCacheImpl {
         origin: ImmutableOrigin,
         cors_setting: Option<CorsSettings>,
     ) -> Option<Image> {
-        let store = self.store.lock();
+        let mut store = self.store.lock();
         let result = store.get_completed_image_if_available(url, origin, cors_setting);
         match result {
             Some(Ok((img, _))) => Some(img),
@@ -1403,5 +1484,54 @@ impl ImageCacheImpl {
             return;
         }
         warn!("Couldn't find cached entry for listener {:?}", id);
+    }
+}
+
+#[cfg(test)]
+mod budget_tests {
+    // brow (phase 6.3): the budget's cost function is the contract the
+    // eviction loop depends on — test it directly on fabricated responses.
+    use super::completed_load_cost;
+    use net_traits::image_cache::{Image, ImageResponse};
+    use pixels::{CorsStatus, ImageFrame, ImageMetadata, PixelFormat, RasterImage};
+    use servo_url::ServoUrl;
+    use std::sync::Arc;
+
+    fn raster_image_with_bytes(len: usize) -> RasterImage {
+        RasterImage {
+            metadata: ImageMetadata { width: 1, height: 1 },
+            format: PixelFormat::RGBA8,
+            id: None,
+            cors_status: CorsStatus::Safe,
+            bytes: Arc::new(vec![0u8; len]),
+            frames: vec![ImageFrame {
+                delay: None,
+                byte_range: 0..len,
+                width: 1,
+                height: 1,
+            }],
+            is_opaque: true,
+            loop_count: None,
+        }
+    }
+
+    #[test]
+    fn cost_counts_raster_encoded_bytes() {
+        let url = ServoUrl::parse("https://example.test/a.png").unwrap();
+        let image = raster_image_with_bytes(4096);
+        let response = ImageResponse::Loaded(Image::Raster(Arc::new(image)), url);
+        assert_eq!(completed_load_cost(&response), 4096);
+    }
+
+    #[test]
+    fn failures_and_metadata_cost_nothing() {
+        assert_eq!(completed_load_cost(&ImageResponse::FailedToLoadOrDecode), 0);
+        assert_eq!(
+            completed_load_cost(&ImageResponse::MetadataLoaded(ImageMetadata {
+                width: 2,
+                height: 2
+            })),
+            0
+        );
     }
 }

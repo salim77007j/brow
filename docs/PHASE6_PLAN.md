@@ -62,7 +62,7 @@ Caveats recorded before acting on these numbers:
 | 6.4 | HTTP memory cache trim | 5000 → 2000 entries | COMMIT A |
 | 6.5 | JS heap bounds | js_mem_max 255 MB (leak guard; in_range band is EXCLUSIVE of 256 — 256 would silently stay unbounded), small-heap 32 MB, large-heap 128 MB, growth 120-200 % | COMMIT A |
 | 6.8 | CI multi-tab gate + sampler fix | N positional URLs open N tabs (browser-standard CLI behavior); 5-tab step with PGID-scoped sampling | COMMIT B |
-| 6.3 | image-cache byte budget | decoded/encoded LRU — DECIDES on 6.8 numbers | PENDING |
+| 6.3 | image-cache byte budget | LRU over completed_loads, 64 MB encoded-byte budget, eviction via remove_loaded_image (releases compositor key; transparent re-decode on next use); unit tests for cost fn | DONE (code) |
 | 6.6 | font fallback LRU | upstream-scale; deferred with note | DEFERRED |
 | 6.7 | background-tab freeze | already shipped phase 3 | DONE (verified) |
 | 6.9 | phase report | before/after table, floor assessment, honest verdict vs 100 MB target | PENDING |

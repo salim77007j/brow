@@ -1188,3 +1188,46 @@ step — two harness defects, no engine defects:
 Files: docs/evidence/phase8/platform-audit.html (tiers),
 docs/evidence/phase8/ime-audit.html (rewritten), docs/DECISIONS.md
 (D-021, D-022), docs/SERVO_UPSTREAM.md (gap list).
+
+## Phase 6.3 + 6.9 + 9.1 + 9.2 (2026-10-10) — image-cache budget, memory
+## report, zero-warning pass, sanitizer pipeline
+
+**6.3 image-cache byte budget** (components/net/image_cache.rs): the
+cache previously retained every completed image's encoded bytes for the
+whole pipeline lifetime — no bound at all (phase 6 research summary).
+Now an LRU (VecDeque insertion order + bump-on-access) enforces a
+64 MB encoded-byte budget. Eviction reuses `remove_loaded_image`,
+which also releases the compositor's WebRender image key, so an
+evicted image transparently re-decodes and re-uploads on next use;
+repaint-heavy pages keep their images via the access bump. Re-insert
+of an existing key corrects the byte accounting before the budget
+loop runs. Unit tests cover the cost function (raster bytes count;
+failures/metadata cost 0).
+
+**6.9 Phase 6 report** (docs/PHASE6_REPORT.md): run #102 numbers —
+12-site single-tab table (343–1286 MB, 0 panics 0 JS errors), 5-tab
+soak peak 700 MB steady 681 MB, smoke guardrail 563/600 MB. Honest
+floor verdict: software-GL CI imposes a ~500 MB process floor
+(constellation + SpiderMonkey + llvmpipe host-RAM buffers); the five
+reference pages cost ≈40 MB/tab above that floor after the levers;
+the <100 MB/tab owner target moves to owner-hardware validation with
+the shipped artifact (documented renegotiation input, R-06).
+
+**9.1 zero-warning pass** (evidence-based from #102 Linux logs):
+crash_handler `format_utc_timestamp` + `civil_from_days` gated
+`cfg(any(windows, test))` (pure-function tests still run on every
+platform), `log_startup_note` gated `cfg(windows)` (sole caller is
+inside gui.rs's cfg(windows) block); `dom/mod.rs` idledeadline glob
+re-export removed (all users import the direct module path);
+`window.rs` requestIdleCallback task now consumes the callback `Call__`
+Result with `let _ =` (exceptions already reported via
+ExceptionHandling::Report). Total warnings in #102: 5 unique — all
+addressed; the clippy/fmt job plus the Linux compile now enforce zero
+on this tree.
+
+**9.2 sanitizer pipeline** (.github/workflows/phase9-sanitizers.yml):
+8-leg matrix (ASan + TSan × brow-privacy/brow-net-core/brow-cache/
+brow-shell-core — pure-Rust crates, nightly -Zsanitizer) plus a
+Valgrind job (pinned stable toolchain, definite-leak gate over the
+test binaries located via cargo --message-format=json). Manual
+dispatch + weekly; not on push (sanitizer builds recompile deps).
