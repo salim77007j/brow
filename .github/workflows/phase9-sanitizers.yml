@@ -32,12 +32,13 @@ jobs:
         crate: [brow-privacy, brow-net-core, brow-cache, brow-shell-core]
         san: [address, thread]
     env:
-      # rustc hint from run #3: precompiled (uninstrumented) std vs
-      # instrumented crate units trips the ABI-mismatch check; the
-      # sanctioned escape is -Cunsafe-allow-abi-mismatch=sanitizer
-      # (tested crates are pure Rust; uninstrumented std is the standard
-      # sanitizer mode without -Zbuild-std).
-      RUSTFLAGS: -Zsanitizer=${{ matrix.san }} -Cunsafe-allow-abi-mismatch=sanitizer
+      # rustc hint from run #3 + run #4 evidence: with uninstrumented
+      # precompiled std, TSan cannot see std::sync::Mutex's futex acquire
+      # edges and reports false data races on correctly-locked code
+      # (dedup.rs:83 DedupPool::get). -Zbuild-std rebuilds std instrumented
+      # — the fully-supported sanitizer configuration — which also removes
+      # the ABI-mismatch mixing error entirely.
+      RUSTFLAGS: -Zsanitizer=${{ matrix.san }} -Zbuild-std
       # brow (phase 9.2 fix): servo/rust-toolchain.toml pins stable 1.97.1 and
       # rustup honors it for everything under servo/, overriding the default
       # toolchain — RUSTUP_TOOLCHAIN is the documented override that wins over
@@ -58,7 +59,7 @@ jobs:
 
       - name: Install nightly toolchain (-Zsanitizer is nightly-only)
         run: |
-          rustup toolchain install nightly --profile minimal
+          rustup toolchain install nightly --profile minimal -c rust-src
           rustup default nightly
           rustup target add x86_64-unknown-linux-gnu --toolchain nightly
           rustc --version
