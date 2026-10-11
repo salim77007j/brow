@@ -48,6 +48,10 @@ into the document title so the screenshot is evidence too.</p>
   };
 
   // ---- modern CSS ------------------------------------------------------
+  // Tier definitions (D-021):
+  //   "must" = absence breaks rendering or function of real websites.
+  //   "want" = progressive enhancement; engines without it degrade
+  //            gracefully (default fallback), no site breaks.
   // CSS.supports checks the PARSER (stylo). Selector features use the
   // selector() form.
   var css = {
@@ -56,7 +60,14 @@ into the document title so the screenshot is evidence too.</p>
     "gap (flex)":         [window.CSS && CSS.supports("gap", "4px"), "must"],
     "aspect-ratio":       [window.CSS && CSS.supports("aspect-ratio", "16 / 9"), "must"],
     "color-scheme":       [window.CSS && CSS.supports("color-scheme", "dark light"), "must"],
-    "accent-color":       [window.CSS && CSS.supports("accent-color", "red"), "must"],
+    // accent-color: want (D-021). Pure progressive enhancement — a UA
+    // without it renders checkboxes/radios/progress in default colors and
+    // every site keeps working. stylo (upstream) does not define the
+    // property; registering it parser-side without form-control painting
+    // would make CSS.supports() lie to feature-detecting sites, so the
+    // honest state is "unsupported" until painting lands. See
+    // SERVO_UPSTREAM.md gap list.
+    "accent-color":       [window.CSS && CSS.supports("accent-color", "red"), "want"],
     "oklch color":        [window.CSS && CSS.supports("color", "oklch(51% 0.1 20)"), "want"],
     "dvh units":          [window.CSS && CSS.supports("height", "100dvh"), "want"],
     ":has()":             [window.CSS && CSS.supports("selector(a:has(b))"), "want"],

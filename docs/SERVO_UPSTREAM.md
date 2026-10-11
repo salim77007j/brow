@@ -47,3 +47,14 @@ diff -ru /tmp/servo-up/components servo/components | less
   (phase reports list every engine file we touch).
 - Engine upgrades (e.g. future servo stable) are a deliberate, documented event —
   re-run the full WPT subset + headless smoke before/after.
+
+## Upstream gaps recorded (phase 8)
+
+- **`accent-color` CSS property** — not defined in stylo's property
+  list; `CSS.supports("accent-color", ...)`. returns false. A local
+  parser-only patch was rejected (D-021): registering the property
+  without form-control painting would make feature detection lie.
+  Real fix = parser registration + widget painting in
+  components/layout — upstream-scale project. Audit tier: want.
+- **MSE (MediaSource)** — absent upstream (R-17). want-tier.
+- **H.265/HEVC** — codec licensing; media backend dependent. want-tier.

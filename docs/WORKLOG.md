@@ -1163,3 +1163,28 @@ selectors live, trackers 8/8, CNAME/CHIPS/DoH/fingerprint/session/stats OK.
   control). This fix class = real privacy hardening beyond the corpus:
   every @@...$generihide-style rule in the embedded lists was
   over-allowing network requests.
+
+## Phase 8 iteration 2 (2026-10-10) — run #102 post-mortem, audit-gate fixes
+
+Run #102 (a5e07cc2b): 6/7 jobs green — Windows artifact built and
+uploaded, Linux compile green, 12-site matrix 0 panics 0 JS errors
+(reddit 343MB … github 1286MB, software GL), 5-tab multitab memory
+gate 0 panics 0 errors peak 700MB steady 681MB, smoke RSS 563MB under
+the 600MB guardrail. Only failure: the new Phase 8 platform/IME audit
+step — two harness defects, no engine defects:
+
+1. `css:accent-color` was mis-tiered "must" by my own audit page.
+   Reclassified want (D-021) with tier definitions written into the
+   page: must = absence breaks real sites; want = graceful degradation.
+   Upstream gap recorded in SERVO_UPSTREAM.md; parser-only local patch
+   rejected because CSS.supports() must not lie.
+2. IME audit required `beforeinput` from a page that only dispatched
+   synthetic CompositionEvents — engine pipeline never invoked, event
+   could never fire. Redesigned (D-022): part A composition machinery
+   (synthetic, DOM delivery), part B real editing pipeline via
+   execCommand("insertText") — verified in execcommands.rs that the
+   engine itself fires beforeinput (step 4.2) and input (step 7).
+
+Files: docs/evidence/phase8/platform-audit.html (tiers),
+docs/evidence/phase8/ime-audit.html (rewritten), docs/DECISIONS.md
+(D-021, D-022), docs/SERVO_UPSTREAM.md (gap list).

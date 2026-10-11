@@ -524,3 +524,44 @@ express per-site scoping.
 a stylesheet ~600 KB (generics) is parsed once per thread, not per page.
 If a site breaks under element hiding, the single pref
 network_privacy_cosmetic_filter_enabled is the kill switch.
+
+## D-021 — Platform audit tiers: accent-color is "want", not "must" (phase 8)
+
+**Decision** (2026-10-10, phase 8 iteration 2): the platform audit's
+"must" tier is redefined as *absence breaks rendering or function of
+real websites*; "want" = progressive enhancement with graceful
+degradation. `accent-color` moves must → want: a UA without it renders
+form controls in default colors and no site breaks. stylo (upstream)
+does not define the property at all.
+
+**Why**: run #102's only platform-audit gate failure was this one
+mis-tiered property. Registering `accent-color` parser-side without
+form-control painting support would make `CSS.supports()` return true
+while the style has zero effect — actively lying to feature-detecting
+sites. The honest state until painting lands is unsupported.
+
+**Consequence**: the audit gate now checks 12 media + 8 CSS musts that
+genuinely break sites when absent; all want-tier misses stay visible in
+the JSON summary. The upstream gap is recorded in SERVO_UPSTREAM.md
+(parser registration + widget painting = upstream-scale project).
+
+## D-022 — IME CI scope: composition machinery + execCommand editing pipeline (phase 8)
+
+**Decision** (2026-10-10, phase 8 iteration 2): the headless CI IME
+audit gates on (A) compositionstart/update/end event delivery with
+correct data and (B) the real editing pipeline —
+`execCommand("insertText")`, which makes the engine itself dispatch
+`beforeinput` and `input` and insert text into a contenteditable
+editing host (execcommands.rs steps 4.2/7 — engine events, not
+synthetic clones). Real OS/winit IME preedit remains owner-hardware
+validation (Phase 3, R-05).
+
+**Why**: run #102's IME audit demanded `beforeinput` from a page that
+only dispatched synthetic CompositionEvents and set `.value` directly —
+the engine's editing pipeline was never invoked, so the event could
+never fire. Harness design bug, not an engine bug. Synthetic
+dispatchEvent can never exercise engine pipelines; execCommand can.
+
+**Consequence**: pass requires composition machinery AND a real
+engine-side beforeinput/input/commit cycle. Any IME regression that
+breaks the editing pipeline now fails CI before an artifact ships.
